@@ -1,5 +1,7 @@
 #include "../include/user.h"
 #include "../include/ext2.h"
+#include "../include/inode.h"
+#include "../include/disk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,9 +69,12 @@ int find_user(const char *username) {
 int login(const char *username, const char *password) {
     int user_index = find_user(username);
     if (user_index == -1) {
+        printf("DEBUG: User '%s' not found\n", username);
         return -1; // 用户不存在
     }
-    
+    printf("DEBUG: Found user '%s', stored password='%s', input password='%s'\n",
+           username, fs.users[user_index].password, password);
+
     // 简单的密码验证（实际应用中应使用加密）
     if (strcmp(fs.users[user_index].password, password) == 0) {
         fs.current_user = user_index;
@@ -77,6 +82,7 @@ int login(const char *username, const char *password) {
         return 0;
     }
     
+    printf("DEBUG: Password mismatch\n");
     return -1; // 密码错误
 }
 
@@ -179,4 +185,4 @@ int change_password(const char *username, const char *old_password, const char *
     fs.users[user_index].password[sizeof(fs.users[user_index].password) - 1] = '\0';
     
     return 0;
-} 
+}
