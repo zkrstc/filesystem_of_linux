@@ -35,7 +35,7 @@ int add_user(const char *username, const char *password, uint16_t uid, uint16_t 
             fs.users[i].gid = gid;
             fs.users[i].is_active = 1;
             
-            return 0;
+            return 0;//找到就返回
         }
     }
     
