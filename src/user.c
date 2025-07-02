@@ -1,5 +1,6 @@
 #include "../include/user.h"
 #include "../include/ext2.h"
+#include "../include/disk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

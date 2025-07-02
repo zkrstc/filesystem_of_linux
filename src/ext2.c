@@ -1,6 +1,8 @@
 #include "../include/ext2.h"
 #include "../include/disk.h"
 #include "../include/user.h"
+#include "../include/commands.h"
+#include "../include/inode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,19 +13,19 @@ ext2_fs_t fs;
 
 // 文件系统初始化
 int ext2_init(const char *disk_image) {
-    // 初始化用户系统
-    init_users();
-    
     // 初始化文件系统状态
     memset(&fs, 0, sizeof(ext2_fs_t));
     fs.current_user = -1;
     fs.next_fd = 3; // 0, 1, 2 是标准输入输出
-    
+
+    // 初始化用户系统
+    init_users();
+
     // 挂载磁盘镜像
     if (disk_image != NULL) {
         return cmd_mount(disk_image);
     }
-    
+
     return 0;
 }
 

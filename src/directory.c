@@ -1,5 +1,6 @@
-#include "../include/directory.h"
+#include "../include/user.h"
 #include "../include/inode.h"
+#include "../include/directory.h"
 #include "../include/disk.h"
 #include "../include/ext2.h"
 #include <stdio.h>
@@ -132,8 +133,8 @@ int list_directory(const char *path) {
         if (is_directory(entries[i].inode)) type_char = 'd';
         else if (is_regular_file(entries[i].inode)) type_char = '-';
         
-        char permissions[10];
-        snprintf(permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c",
+        char permissions[11];
+        snprintf(permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c%c",
                 type_char,
                 (inode.i_mode & EXT2_S_IRUSR) ? 'r' : '-',
                 (inode.i_mode & EXT2_S_IWUSR) ? 'w' : '-',
