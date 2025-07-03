@@ -12,7 +12,7 @@ static int disk_fd = -1;
 uint8_t block_bitmap[BLOCK_SIZE];
 uint8_t inode_bitmap[BLOCK_SIZE];
 
-// 位图操作
+// 位图操作,1占用，0不占用
 void set_bitmap_bit(uint8_t *bitmap, int bit)
 {
     int byte = bit / 8;
@@ -36,9 +36,14 @@ int get_bitmap_bit(uint8_t *bitmap, int bit)
 
 /*find_free_bit：
 
-扫描 block_bitmap（块位图），寻找第一个 0（空闲块）。
+扫描 block_bitmap（块位图）或者是inode_bitmap，寻找第一个 0（空闲块）。
 
-如果找不到空闲块（所有位都是 1），返回 -1，此时 allocate_block 返回 0 表示分配失败。*/
+返回值为相应的位置块号或者inode号
+
+其中一位bitmap是8位，表示8个块或者8个inode
+
+size表示的是bitmap有多少个字节（BLOCK_SIZE）
+*/
 int find_free_bit(uint8_t *bitmap, int size)
 {
     for (int i = 0; i < size * 8; i++)
@@ -108,7 +113,9 @@ int write_block(uint32_t block_no, const void *buffer)
 
     return 0;
 }
-/* (BLOCK_SIZE / sizeof(ext2_inode_t)得到的是多少inode占据一个块，比如1024/256=4也就是4个inode一个块*/
+/*
+读inode_no里面的inode信息到inode结构体中。
+*/
 int read_inode(uint32_t inode_no, ext2_inode_t *inode)
 {
     if (inode_no == 0 || inode_no >= MAX_INODES)
@@ -120,6 +127,8 @@ int read_inode(uint32_t inode_no, ext2_inode_t *inode)
     // 超级块占1个块，块位图占1个块，inode位图占1个块
     // inode表从第4个块开始
     // inode表存储的是inode信息，每个inode占用sizeof(ext2_inode_t)字节。
+    /*
+(BLOCK_SIZE / sizeof(ext2_inode_t)得到的是多少inode占据一个块，比如1024/256=4也就是4个inode一个块*/
     uint32_t block_no = 3 + (inode_no - 1) / (BLOCK_SIZE / sizeof(ext2_inode_t));
     uint32_t offset = (inode_no - 1) % (BLOCK_SIZE / sizeof(ext2_inode_t));
 
@@ -137,7 +146,8 @@ int read_inode(uint32_t inode_no, ext2_inode_t *inode)
     memcpy(inode, buffer + offset * sizeof(ext2_inode_t), sizeof(ext2_inode_t));
     return 0;
 }
-
+/* 注意这里的buffer是块的起始地址，如果要写入的是inode_no=2的话，根据块偏移找到对应的位置（同上）
+    memcpy(buffer + offset * sizeof(ext2_inode_t), inode, sizeof(ext2_inode_t));*/
 int write_inode(uint32_t inode_no, const ext2_inode_t *inode)
 {
     //  inode_no：要写入的 inode 编号（从 1 开始编号）。
@@ -169,8 +179,10 @@ uint32_t allocate_block(void)
     {
         return 0; // 没有空闲块
     }
+    /* 设置块位图block_bitmap中的对应位为已分配,分配后设置即
+    free_bit找到的位置是哪个块号是空闲的*/
+    set_bitmap_bit(block_bitmap, free_bit);
 
-    set_bitmap_bit(block_bitmap, free_bit); // 设置块位图中的对应位为已分配
     fs.superblock.s_free_blocks_count--;
 
     // 写回位图
@@ -195,13 +207,13 @@ void free_block(uint32_t block_no)
 
 uint32_t allocate_inode(void)
 {
-    int free_bit = find_free_bit(inode_bitmap, BLOCK_SIZE);
+    int free_bit = find_free_bit(inode_bitmap, BLOCK_SIZE); // bitmap中找到空闲的inode号
     if (free_bit == -1)
     {
         return 0; // 没有空闲inode
     }
 
-    set_bitmap_bit(inode_bitmap, free_bit);
+    set_bitmap_bit(inode_bitmap, free_bit); // 把空闲的inode号设置为占用
     fs.superblock.s_free_inodes_count--;
 
     // 写回位图
