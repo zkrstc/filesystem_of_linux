@@ -23,10 +23,24 @@ int ext2_init(const char *disk_image) {
 
     // 挂载磁盘镜像
     if (disk_image != NULL) {
-        int ret = cmd_mount(disk_image);
-        // 挂载后再加载用户信息
+        if (init_disk_image(disk_image) != 0) {
+            printf("Error: Failed to open disk image\n");
+            return -1;
+        }
+        // 读取超级块
+        if (read_block(0, &fs.superblock) != 0) {
+            printf("Error: Failed to read superblock\n");
+            close_disk_image();
+            return -1;
+        }
+        // 校验魔数
+        if (fs.superblock.s_magic != 0xEF53) {
+            printf("Error: Invalid file system magic number\n");
+            close_disk_image();
+            return -1;
+        }
+        // 加载用户信息
         load_users_from_disk();
-        return ret;
     }
 
     return 0;

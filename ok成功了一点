@@ -1,0 +1,64 @@
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ make clean
+rm -f src/main.o src/ext2.o src/inode.o src/directory.o src/user.o src/disk.o src/commands.o ext2fs
+rm -f *.img
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ make
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/main.c -o src/main.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/ext2.c -o src/ext2.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/inode.c -o src/inode.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/directory.c -o src/directory.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/user.c -o src/user.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/disk.c -o src/disk.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/commands.c -o src/commands.o
+gcc src/main.o src/ext2.o src/inode.o src/directory.o src/user.o src/disk.o src/commands.o -o ext2fs
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ ./ext2fs 
+DEBUG: read_block(4): disk_fd=-1
+========================================
+    EXT2 File System Simulator
+========================================
+This is a simplified EXT2 file system implementation
+Features:
+- File and directory operations
+- User authentication and permissions
+- Inode-based file management
+- Block allocation and bitmap management
+- Multi-level directory structure
+========================================
+
+EXT2 File System Simulator
+Type 'help' for available commands
+anonymous:/> format disk.img
+Formatting disk image: disk.img
+Formatting EXT2 file system: disk.img
+DEBUG: read_block(1): disk_fd=3
+DEBUG: read_block(2): disk_fd=3
+DEBUG: read_block(3): disk_fd=3
+DEBUG: root_inode = 2
+DEBUG: read_block(3): disk_fd=3
+DEBUG: read_inode(2): block_no=3, offset=1
+DEBUG: read_block(3): disk_fd=3
+DEBUG: read_block(4): disk_fd=3
+EXT2 file system formatted successfully
+Disk image formatted successfully
+anonymous:/> mount disk.img
+DEBUG: read_block(4): disk_fd=-1
+DEBUG: read_block(1): disk_fd=3
+DEBUG: read_block(2): disk_fd=3
+DEBUG: read_block(0): disk_fd=3
+DEBUG: read_block(4): disk_fd=3
+Disk image mounted: disk.img
+anonymous:/> login root root
+Login successful. Welcome, root!
+root:/> mkdir new
+DEBUG: Creating directory: new
+DEBUG: get_parent_inode called with path: new
+DEBUG: Relative path detected
+DEBUG: Child name: new, parent inode: 2
+DEBUG: Parent inode: 2, child name: new
+DEBUG: read_block(3): disk_fd=3
+DEBUG: read_inode(2): block_no=3, offset=1
+DEBUG: read_block(3): disk_fd=3
+DEBUG: read_inode(2): block_no=3, offset=1
+DEBUG: Permission denied for parent inode 2
+Error: Failed to create directory
+root:/> EXT2 file system cleaned up
+Goodbye!

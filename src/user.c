@@ -45,7 +45,7 @@ void init_users() {
         }
     }
     if (!has_root) {
-        memset(fs.users, 0, sizeof(fs.users));
+    memset(fs.users, 0, sizeof(fs.users));
         strcpy(fs.users[0].username, "root");
         strcpy(fs.users[0].password, "root");
         fs.users[0].uid = 0;

@@ -325,95 +325,33 @@ int cmd_users(void) {
 // 文件系统管理命令
 int cmd_format(const char *disk_image) {
     printf("Formatting disk image: %s\n", disk_image);
-    
-    // 创建磁盘镜像文件
+    // 创建空镜像（全0填充）
     FILE *fp = fopen(disk_image, "wb");
     if (fp == NULL) {
         printf("Error: Cannot create disk image\n");
         return -1;
     }
-    
-    // 写入空块
     uint8_t zero_block[BLOCK_SIZE] = {0};
     for (int i = 0; i < MAX_BLOCKS; i++) {
         fwrite(zero_block, 1, BLOCK_SIZE, fp);
     }
-    
     fclose(fp);
-    
-    // 初始化超级块
-    ext2_superblock_t superblock;
-    memset(&superblock, 0, sizeof(superblock));
-    
-    superblock.s_inodes_count = MAX_INODES;
-    superblock.s_blocks_count = MAX_BLOCKS;
-    superblock.s_r_blocks_count = 10;
-    superblock.s_free_blocks_count = MAX_BLOCKS - 10;
-    superblock.s_free_inodes_count = MAX_INODES - 1;
-    superblock.s_first_data_block = 1;
-    superblock.s_log_block_size = 0;
-    superblock.s_log_frag_size = 0;
-    superblock.s_blocks_per_group = MAX_BLOCKS;
-    superblock.s_frags_per_group = MAX_BLOCKS;
-    superblock.s_inodes_per_group = MAX_INODES;
-    superblock.s_mtime = time(NULL);
-    superblock.s_wtime = time(NULL);
-    superblock.s_mnt_count = 0;
-    superblock.s_max_mnt_count = 20;
-    superblock.s_magic = 0xEF53;
-    superblock.s_state = 1;
-    superblock.s_errors = 1;
-    superblock.s_minor_rev_level = 0;
-    superblock.s_lastcheck = time(NULL);
-    superblock.s_checkinterval = 1800;
-    superblock.s_creator_os = 0;
-    superblock.s_rev_level = 0;
-    superblock.s_def_resuid = 0;
-    superblock.s_def_resgid = 0;
-    superblock.s_first_ino = 11;
-    superblock.s_inode_size = sizeof(ext2_inode_t);
-    superblock.s_block_group_nr = 0;
-    superblock.s_feature_compat = 0;
-    superblock.s_feature_incompat = 0;
-    superblock.s_feature_ro_compat = 0;
-    
-    // 写入超级块
-    FILE *fp2 = fopen(disk_image, "r+b");
-    if (fp2 == NULL) {
-        printf("Error: Cannot write superblock\n");
+    // 调用ext2_format完成所有文件系统结构初始化
+    // ext2_format会写入超级块、位图、根目录、用户信息等
+    if (ext2_format(disk_image) != 0) {
+        printf("Error: ext2_format failed\n");
         return -1;
     }
-    
-    fwrite(&superblock, 1, sizeof(superblock), fp2);
-    fclose(fp2);
-    
     printf("Disk image formatted successfully\n");
     return 0;
 }
 
 int cmd_mount(const char *disk_image) {
-    if (init_disk_image(disk_image) != 0) {
+    // ext2_init会打开磁盘文件，加载超级块、位图、用户信息等到内存
+    if (ext2_init(disk_image) != 0) {
         printf("Error: Failed to mount disk image\n");
         return -1;
     }
-    
-    // 读取超级块
-    if (read_block(0, &fs.superblock) != 0) {
-        printf("Error: Failed to read superblock\n");
-        close_disk_image();
-        return -1;
-    }
-    
-    // 验证魔数
-    if (fs.superblock.s_magic != 0xEF53) {
-        printf("Error: Invalid file system magic number\n");
-        close_disk_image();
-        return -1;
-    }
-    
-    strncpy(fs.disk_image, disk_image, sizeof(fs.disk_image) - 1);
-    fs.disk_image[sizeof(fs.disk_image) - 1] = '\0';
-    
     printf("Disk image mounted: %s\n", disk_image);
     return 0;
 }
