@@ -346,8 +346,8 @@ int truncate_inode(uint32_t inode_no, off_t length)
 
     return write_inode(inode_no, &inode);
 }
-
-// 权限检查
+/*检查当前用户是否有权限 (access) 访问指定的 inode (inode_no)。
+返回 1（有权限）或 0（无权限）。*/
 int check_permission(uint32_t inode_no, int access)
 {
     ext2_inode_t inode;
@@ -355,9 +355,14 @@ int check_permission(uint32_t inode_no, int access)
     {
         return 0;
     }
-
     uint16_t uid = get_current_uid();
     uint16_t gid = get_current_gid();
+
+    // root用户拥有所有权限
+    if (uid == 0)
+    {
+        return 1;
+    }
 
     uint16_t mode = 0;
     if (uid == inode.i_uid)
