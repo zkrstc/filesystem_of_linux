@@ -2,6 +2,7 @@
     "files.associations": {
         "*.dbclient-js": "javascript",
         "types.h": "c",
-        "ext2.h": "c"
+        "ext2.h": "c",
+        "disk.h": "c"
     }
 }

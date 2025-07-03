@@ -46,6 +46,10 @@ int ext2_format(const char *disk_image) {
         if (fwrite(zero_block, 1, BLOCK_SIZE, fp) != BLOCK_SIZE) {
             printf("Error: Failed to write block %d\n", i);
             fclose(fp);
+            /*uint8_t zero_block[BLOCK_SIZE] = {0};
+            fwrite(zero_block, 1, BLOCK_SIZE, fp);
+            解释一下，fwrite使用fp作为文件指针，向文件中写入：起始地址为zero_block，写入长度为BLOCK_SIZE字节的内容。（1表示每个数据项为一字节）
+            */
             return -1;
         }
     }

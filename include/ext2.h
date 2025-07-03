@@ -87,14 +87,14 @@ typedef struct {
     uint32_t i_blocks;            // 块数
     uint32_t i_flags;             // 文件标志
     uint32_t i_block[15];         // 块指针数组
-    uint32_t i_generation;        // 文件版本
-    uint32_t i_file_acl;          // 文件ACL
-    uint32_t i_dir_acl;           // 目录ACL
-    uint32_t i_faddr;             // 片段地址
-    uint8_t i_frag;               // 片段号
-    uint8_t i_fsize;              // 片段大小
-    uint16_t i_pad1;              // 填充
-    uint32_t i_reserved2[2];      // 保留
+    // uint32_t i_generation;        // 文件版本
+    // uint32_t i_file_acl;          // 文件ACL
+    // uint32_t i_dir_acl;           // 目录ACL
+    // uint32_t i_faddr;             // 片段地址
+    // uint8_t i_frag;               // 片段号
+    // uint8_t i_fsize;              // 片段大小
+    // uint16_t i_pad1;              // 填充
+    // uint32_t i_reserved2[2];      // 保留
 } ext2_inode_t;
 
 // 目录项结构
