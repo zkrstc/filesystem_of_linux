@@ -188,7 +188,7 @@ uint32_t allocate_block(void)
     // 写回位图
     write_block(1, block_bitmap);
 
-    return free_bit + 1; // 块号从1开始
+    return free_bit + 1; // 第0位是空闲的，但是这是第一块，块号从1开始
 }
 
 void free_block(uint32_t block_no)
