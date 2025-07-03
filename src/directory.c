@@ -13,53 +13,70 @@ int create_directory(const char *path, uint16_t mode) {
     uint32_t parent_inode;
     char child_name[MAX_FILENAME];
     
+    printf("DEBUG: Creating directory: %s\n", path);
+    
     if (get_parent_inode(path, &parent_inode, child_name) != 0) {
+        printf("DEBUG: Failed to get parent inode for path: %s\n", path);
         return -1;
     }
     
+    printf("DEBUG: Parent inode: %u, child name: %s\n", parent_inode, child_name);
+    
     // 检查父目录是否存在
     if (parent_inode == 0) {
+        printf("DEBUG: Parent inode is 0\n");
         return -1;
     }
     
     // 检查父目录是否为目录
     if (!is_directory(parent_inode)) {
+        printf("DEBUG: Parent inode %u is not a directory\n", parent_inode);
         return -1;
     }
     
     // 检查权限
     if (!check_permission(parent_inode, EXT2_S_IWUSR)) {
+        printf("DEBUG: Permission denied for parent inode %u\n", parent_inode);
         return -1;
     }
     
     // 创建目录inode
     uint32_t dir_inode = create_inode(EXT2_S_IFDIR | mode, get_current_uid(), get_current_gid());
     if (dir_inode == 0) {
+        printf("DEBUG: Failed to create directory inode\n");
         return -1;
     }
+    
+    printf("DEBUG: Created directory inode: %u\n", dir_inode);
     
     // 分配数据块
     uint32_t data_block = allocate_block();
     if (data_block == 0) {
+        printf("DEBUG: Failed to allocate data block\n");
         delete_inode(dir_inode);
         return -1;
     }
+    
+    printf("DEBUG: Allocated data block: %u\n", data_block);
     
     // 设置目录的数据块
     set_inode_block(dir_inode, 0, data_block);
     
     // 创建 . 和 .. 目录项
     if (create_dot_entries(dir_inode, parent_inode) != 0) {
+        printf("DEBUG: Failed to create dot entries\n");
         delete_inode(dir_inode);
         return -1;
     }
     
     // 在父目录中添加目录项
     if (add_directory_entry(parent_inode, child_name, dir_inode, 2) != 0) {
+        printf("DEBUG: Failed to add directory entry to parent\n");
         delete_inode(dir_inode);
         return -1;
     }
     
+    printf("DEBUG: Directory created successfully\n");
     return 0;
 }
 
@@ -332,7 +349,10 @@ int path_to_inode(const char *path, uint32_t *inode_no) {
 }
 
 int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name) {
+    printf("DEBUG: get_parent_inode called with path: %s\n", path);
+    
     if (strcmp(path, "/") == 0) {
+        printf("DEBUG: Path is root directory\n");
         return -1; // 根目录没有父目录
     }
     
@@ -343,18 +363,26 @@ int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name)
     char *last_slash = strrchr(path_copy, '/');
     if (last_slash == NULL) {
         // 相对路径
+        printf("DEBUG: Relative path detected\n");
         strcpy(child_name, path_copy);
         *parent_inode = 1; // 当前目录
+        printf("DEBUG: Child name: %s, parent inode: %u\n", child_name, *parent_inode);
         return 0;
     }
     
     *last_slash = '\0';
     strcpy(child_name, last_slash + 1);
     
+    printf("DEBUG: Path after removing last component: '%s', child name: %s\n", path_copy, child_name);
+    
     if (strlen(path_copy) == 0) {
         *parent_inode = 1; // 根目录
+        printf("DEBUG: Parent is root directory, inode: %u\n", *parent_inode);
     } else {
-        return path_to_inode(path_copy, parent_inode);
+        printf("DEBUG: Resolving parent path: %s\n", path_copy);
+        int result = path_to_inode(path_copy, parent_inode);
+        printf("DEBUG: path_to_inode result: %d, parent inode: %u\n", result, *parent_inode);
+        return result;
     }
     
     return 0;
