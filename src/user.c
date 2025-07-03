@@ -9,17 +9,55 @@
 // 全局变量
 extern ext2_fs_t fs;
 
+// 当前工作目录 inode 号
+static uint32_t current_working_directory_inode = EXT2_ROOT_INO;
+
+#define USER_BLOCK_NO 4 // 用户信息存储在第4号块
+
+// 保存用户信息到磁盘
+void save_users_to_disk() {
+    write_block(USER_BLOCK_NO, fs.users);
+}
+
+// 从磁盘加载用户信息
+void load_users_from_disk() {
+    read_block(USER_BLOCK_NO, fs.users);
+}
+
+uint32_t get_cwd_inode() {
+    return current_working_directory_inode;
+}
+
+void set_cwd_inode(uint32_t ino) {
+    current_working_directory_inode = ino;
+}
+
 // 用户管理
-int init_users(void) {
-    memset(fs.users, 0, sizeof(fs.users));
-    fs.current_user = -1;
-    
-    // 创建默认用户
-    add_user("root", "root", 0, 0);
-    add_user("user1", "password1", 1, 1);
-    add_user("user2", "password2", 2, 1);
-    
-    return 0;
+void init_users() {
+    // 先尝试从磁盘加载
+    load_users_from_disk();
+    // 检查 root 用户是否存在，不存在则初始化默认用户
+    int has_root = 0;
+    for (int i = 0; i < MAX_USERS; i++) {
+        if (fs.users[i].is_active && strcmp(fs.users[i].username, "root") == 0) {
+            has_root = 1;
+            break;
+        }
+    }
+    if (!has_root) {
+        memset(fs.users, 0, sizeof(fs.users));
+        strcpy(fs.users[0].username, "root");
+        strcpy(fs.users[0].password, "root");
+        fs.users[0].uid = 0;
+        fs.users[0].gid = 0;
+        fs.users[0].is_active = 1;
+        strcpy(fs.users[1].username, "user1");
+        strcpy(fs.users[1].password, "user1");
+        fs.users[1].uid = 1;
+        fs.users[1].gid = 1;
+        fs.users[1].is_active = 1;
+        save_users_to_disk();
+    }
 }
 
 int add_user(const char *username, const char *password, uint16_t uid, uint16_t gid) {
@@ -45,7 +83,7 @@ int add_user(const char *username, const char *password, uint16_t uid, uint16_t 
             fs.users[i].uid = uid;
             fs.users[i].gid = gid;
             fs.users[i].is_active = 1;
-            
+            save_users_to_disk();
             return 0;//找到就返回
         }
     }
@@ -57,6 +95,7 @@ int remove_user(const char *username) {
     for (int i = 0; i < MAX_USERS; i++) {
         if (fs.users[i].is_active && strcmp(fs.users[i].username, username) == 0) {
             fs.users[i].is_active = 0;
+            save_users_to_disk();
             return 0;
         }
     }
@@ -84,6 +123,7 @@ int login(const char *username, const char *password) {
     // 简单的密码验证（实际应用中应使用加密）
     if (strcmp(fs.users[user_index].password, password) == 0) {
         fs.current_user = user_index;
+        set_cwd_inode(EXT2_ROOT_INO); // 登录后初始化当前目录为根目录
         printf("Login successful. Welcome, %s!\n", username);
         return 0;
     }
@@ -95,6 +135,7 @@ void logout(void) {
     if (fs.current_user != -1) {
         printf("Logout successful. Goodbye, %s!\n", fs.users[fs.current_user].username);
         fs.current_user = -1;
+        save_users_to_disk();
     }
 }
 
@@ -190,4 +231,8 @@ int change_password(const char *username, const char *old_password, const char *
     fs.users[user_index].password[sizeof(fs.users[user_index].password) - 1] = '\0';
     
     return 0;
+}
+
+uint32_t get_root_inode() {
+    return EXT2_ROOT_INO;
 } 

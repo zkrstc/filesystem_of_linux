@@ -13,6 +13,7 @@
 #define MAX_FILENAME 255
 #define MAX_PATH 1024
 #define MAX_OPEN_FILES 16
+#define EXT2_ROOT_INO 2
 
 // 文件类型
 #define EXT2_S_IFSOCK 0xC000

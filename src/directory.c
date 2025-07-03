@@ -186,6 +186,7 @@ int change_directory(const char *path) {
     }
     
     // 这里可以设置当前工作目录，简化实现
+    set_cwd_inode(inode_no);
     return 0;
 }
 
@@ -323,7 +324,7 @@ int find_directory_entry(uint32_t parent_inode, const char *name, ext2_dir_entry
 // 路径解析
 int path_to_inode(const char *path, uint32_t *inode_no) {
     if (strcmp(path, "/") == 0) {
-        *inode_no = 1; // 根目录
+        *inode_no = EXT2_ROOT_INO; // 根目录
         return 0;
     }
     
@@ -353,7 +354,9 @@ int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name)
     
     if (strcmp(path, "/") == 0) {
         printf("DEBUG: Path is root directory\n");
-        return -1; // 根目录没有父目录
+        *parent_inode = get_root_inode(); // 根目录
+        printf("DEBUG: Parent is root directory, inode: %u\n", *parent_inode);
+        return 0;
     }
     
     char path_copy[MAX_PATH];
@@ -365,7 +368,7 @@ int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name)
         // 相对路径
         printf("DEBUG: Relative path detected\n");
         strcpy(child_name, path_copy);
-        *parent_inode = 1; // 当前目录
+        *parent_inode = get_cwd_inode(); // 当前目录
         printf("DEBUG: Child name: %s, parent inode: %u\n", child_name, *parent_inode);
         return 0;
     }
@@ -376,7 +379,7 @@ int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name)
     printf("DEBUG: Path after removing last component: '%s', child name: %s\n", path_copy, child_name);
     
     if (strlen(path_copy) == 0) {
-        *parent_inode = 1; // 根目录
+        *parent_inode = get_root_inode(); // 根目录
         printf("DEBUG: Parent is root directory, inode: %u\n", *parent_inode);
     } else {
         printf("DEBUG: Resolving parent path: %s\n", path_copy);

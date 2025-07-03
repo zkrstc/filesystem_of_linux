@@ -4,7 +4,7 @@
 #include "ext2.h"
 
 // 用户管理
-int init_users(void);
+void init_users(void);
 int add_user(const char *username, const char *password, uint16_t uid, uint16_t gid);
 int remove_user(const char *username);
 int find_user(const char *username);
@@ -28,5 +28,15 @@ void list_users(void);
 
 // 密码管理
 int change_password(const char *username, const char *old_password, const char *new_password);
+
+// 当前工作目录 inode 号
+uint32_t get_cwd_inode();
+void set_cwd_inode(uint32_t ino);
+
+// 获取根目录 inode 号
+uint32_t get_root_inode();
+
+void save_users_to_disk(void);
+void load_users_from_disk(void);
 
 #endif // USER_H 

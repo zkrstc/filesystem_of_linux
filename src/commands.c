@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
 
 // 文件操作命令
 int cmd_create(const char *path) {
@@ -518,6 +519,44 @@ void print_usage(void) {
     printf("Type 'help' for available commands\n");
 }
 
+// 获取当前目录路径
+static void get_cwd_path(char *buf, size_t size) {
+    uint32_t inode = get_cwd_inode();
+    if (inode == EXT2_ROOT_INO) {
+        strncpy(buf, "/", size);
+        buf[size-1] = '\0';
+        return;
+    }
+    // 反向查找父目录，拼接路径（简化实现：只支持一级目录）
+    // 实际可递归查找父目录并拼接
+    // 这里只做简单实现
+    uint32_t parent_inode = EXT2_ROOT_INO;
+    ext2_inode_t parent;
+    char name[MAX_FILENAME+1] = "";
+    // 遍历根目录下所有项，找到当前inode的名字
+    if (read_inode(parent_inode, &parent) == 0) {
+        uint8_t buffer[BLOCK_SIZE];
+        for (int b = 0; b < 12; b++) {
+            uint32_t block_no;
+            if (get_inode_block(parent_inode, b, &block_no) != 0 || block_no == 0) continue;
+            if (read_block(block_no, buffer) != 0) continue;
+            ext2_dir_entry_t *entries = (ext2_dir_entry_t*)buffer;
+            int entry_count = BLOCK_SIZE / sizeof(ext2_dir_entry_t);
+            for (int i = 0; i < entry_count; i++) {
+                if (entries[i].inode == inode) {
+                    snprintf(name, sizeof(name), "%s", entries[i].name);
+                    break;
+                }
+            }
+        }
+    }
+    if (name[0]) {
+        snprintf(buf, size, "/%s", name);
+    } else {
+        snprintf(buf, size, "/?");
+    }
+}
+
 // 命令解析
 int parse_command(char *line) {
     char *token = strtok(line, " \t\n");
@@ -692,12 +731,15 @@ int parse_command(char *line) {
 
 void command_loop(void) {
     char line[1024];
+    char cwd_buf[MAX_PATH];
     
     printf("EXT2 File System Simulator\n");
     printf("Type 'help' for available commands\n");
     
     while (1) {
-        printf("ext2fs> ");
+        const char *username = get_current_username();
+        get_cwd_path(cwd_buf, sizeof(cwd_buf));
+        printf("%s:%s> ", username, cwd_buf);
         if (fgets(line, sizeof(line), stdin) == NULL) {
             break;
         }

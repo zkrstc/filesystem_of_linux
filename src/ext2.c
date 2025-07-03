@@ -18,12 +18,15 @@ int ext2_init(const char *disk_image) {
     fs.current_user = -1;
     fs.next_fd = 3; // 0, 1, 2 是标准输入输出
 
-    // 初始化用户系统
+    // 初始化用户系统（会自动从磁盘加载）
     init_users();
 
     // 挂载磁盘镜像
     if (disk_image != NULL) {
-        return cmd_mount(disk_image);
+        int ret = cmd_mount(disk_image);
+        // 挂载后再加载用户信息
+        load_users_from_disk();
+        return ret;
     }
 
     return 0;
@@ -153,6 +156,7 @@ int ext2_format(const char *disk_image) {
     
     // 创建根目录inode
     uint32_t root_inode = create_inode(EXT2_S_IFDIR | 0755, 0, 0);
+    printf("DEBUG: root_inode = %u\n", root_inode);
     if (root_inode == 0) {
         printf("Error: Failed to create root directory inode\n");
         close_disk_image();
@@ -191,6 +195,10 @@ int ext2_format(const char *disk_image) {
     
     // 写入根目录数据
     write_block(root_block, root_data);
+    
+    // 创建根目录后，初始化默认用户并保存到磁盘
+    init_users();
+    save_users_to_disk();
     
     close_disk_image();
     
