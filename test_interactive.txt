@@ -1,0 +1,25 @@
+format disk.img
+mount disk.img
+login root root
+mkdir /home
+mkdir /home/user1
+mkdir /home/user2
+create /home/user1/test.txt
+open /home/user1/test.txt 2
+write 1 Hello from root
+close 1
+logout
+login user1 user1
+mkdir /home/user1/mydir
+create /home/user1/myfile.txt
+open /home/user1/myfile.txt 2
+write 1 Hello from user1
+close 1
+dir /home/user1
+logout
+login root root
+chmod /home/user1/myfile.txt 0644
+useradd user3 password3 3 3
+users
+status
+quit 

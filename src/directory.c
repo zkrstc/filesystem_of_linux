@@ -3,6 +3,7 @@
 #include "../include/directory.h"
 #include "../include/disk.h"
 #include "../include/ext2.h"
+#include "../include/commands.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,45 +11,54 @@
 
 // 目录操作
 int create_directory(const char *path, uint16_t mode) {
+    (void)mode; // 避免未使用参数警告
     uint32_t parent_inode;
     char child_name[MAX_FILENAME];
-    
-    printf("DEBUG: Creating directory: %s\n", path);
-    
+
+    // 先尝试获取父目录
     if (get_parent_inode(path, &parent_inode, child_name) != 0) {
-        printf("DEBUG: Failed to get parent inode for path: %s\n", path);
-        return -1;
+        // 递归创建父目录（以root权限）
+        char parent_path[MAX_PATH];
+        strncpy(parent_path, path, sizeof(parent_path) - 1);
+        parent_path[sizeof(parent_path) - 1] = '\0';
+        char *last_slash = strrchr(parent_path, '/');
+        if (last_slash && last_slash != parent_path) {
+            *last_slash = '\0';
+            extern ext2_fs_t fs;
+            int saved_user = fs.current_user;
+            fs.current_user = 0; // root
+            create_directory_recursive(parent_path, 0755);
+            fs.current_user = saved_user;
+        }
+        // 再次获取父目录
+        if (get_parent_inode(path, &parent_inode, child_name) != 0) {
+            printf("DEBUG: Failed to get parent inode for path: %s\n", path);
+            return -1;
+        }
     }
-    
-    printf("DEBUG: Parent inode: %u, child name: %s\n", parent_inode, child_name);
-    
-    // 检查父目录是否存在
-    if (parent_inode == 0) {
-        printf("DEBUG: Parent inode is 0\n");
-        return -1;
-    }
-    
+
     // 检查父目录是否为目录
     if (!is_directory(parent_inode)) {
         printf("DEBUG: Parent inode %u is not a directory\n", parent_inode);
         return -1;
     }
-    
     // 检查权限
     if (!check_permission(parent_inode, EXT2_S_IWUSR)) {
         printf("DEBUG: Permission denied for parent inode %u\n", parent_inode);
         return -1;
     }
-    
+    // 检查是否已存在
+    uint32_t exist_inode;
+    if (find_child_inode(parent_inode, child_name, &exist_inode) == 0) {
+        // 已存在
+        return 0;
+    }
     // 创建目录inode
-    uint32_t dir_inode = create_inode(EXT2_S_IFDIR | mode, get_current_uid(), get_current_gid());
+    uint32_t dir_inode = create_inode(EXT2_S_IFDIR | 0755, get_current_uid(), get_current_gid());
     if (dir_inode == 0) {
         printf("DEBUG: Failed to create directory inode\n");
         return -1;
     }
-    
-    printf("DEBUG: Created directory inode: %u\n", dir_inode);
-    
     // 分配数据块
     uint32_t data_block = allocate_block();
     if (data_block == 0) {
@@ -56,27 +66,19 @@ int create_directory(const char *path, uint16_t mode) {
         delete_inode(dir_inode);
         return -1;
     }
-    
-    printf("DEBUG: Allocated data block: %u\n", data_block);
-    
-    // 设置目录的数据块
     set_inode_block(dir_inode, 0, data_block);
-    
     // 创建 . 和 .. 目录项
     if (create_dot_entries(dir_inode, parent_inode) != 0) {
         printf("DEBUG: Failed to create dot entries\n");
         delete_inode(dir_inode);
         return -1;
     }
-    
     // 在父目录中添加目录项
     if (add_directory_entry(parent_inode, child_name, dir_inode, 2) != 0) {
         printf("DEBUG: Failed to add directory entry to parent\n");
         delete_inode(dir_inode);
         return -1;
     }
-    
-    printf("DEBUG: Directory created successfully\n");
     return 0;
 }
 
@@ -121,35 +123,30 @@ int delete_directory(const char *path) {
 int list_directory(const char *path) {
     uint32_t inode_no;
     if (path_to_inode(path, &inode_no) != 0) {
+        printf("Error: Directory not found: %s\n", path);
         return -1;
     }
-    
     if (!is_directory(inode_no)) {
+        printf("Error: Not a directory: %s\n", path);
         return -1;
     }
-    
     // 检查权限
     if (!check_permission(inode_no, EXT2_S_IRUSR)) {
+        printf("Error: Permission denied\n");
         return -1;
     }
-    
     ext2_dir_entry_t entries[64];
     int count = read_directory_entries(inode_no, entries, 64);
-    
     printf("Directory listing for: %s\n", path);
-    printf("%-20s %-10s %-10s %-10s %-10s\n", "Name", "Inode", "Type", "Size", "Permissions");
-    printf("------------------------------------------------------------\n");
-    
+    printf("%-20s %-10s %-10s %-10s %-10s %-10s\n", "Name", "Inode", "Type", "Size", "Permissions", "Address");
+    printf("-------------------------------------------------------------------------------\n");
     for (int i = 0; i < count; i++) {
         if (entries[i].inode == 0) continue;
-        
         ext2_inode_t inode;
         if (read_inode(entries[i].inode, &inode) != 0) continue;
-        
         char type_char = '?';
         if (is_directory(entries[i].inode)) type_char = 'd';
         else if (is_regular_file(entries[i].inode)) type_char = '-';
-        
         char permissions[11];
         snprintf(permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c%c",
                 type_char,
@@ -162,31 +159,51 @@ int list_directory(const char *path) {
                 (inode.i_mode & EXT2_S_IROTH) ? 'r' : '-',
                 (inode.i_mode & EXT2_S_IWOTH) ? 'w' : '-',
                 (inode.i_mode & EXT2_S_IXOTH) ? 'x' : '-');
-        
-        printf("%-20s %-10u %-10c %-10u %-10s\n", 
-               entries[i].name, entries[i].inode, type_char, inode.i_size, permissions);
+        printf("%-20s %-10u %-10c %-10u %-10s %-10u\n",
+               entries[i].name, entries[i].inode, type_char, inode.i_size, permissions, entries[i].inode);
     }
-    
     return 0;
 }
 
 int change_directory(const char *path) {
     uint32_t inode_no;
-    if (path_to_inode(path, &inode_no) != 0) {
+    char full_path[MAX_PATH];
+    if (path[0] != '/') {
+        // 相对路径，拼接当前目录
+        char cwd[MAX_PATH];
+        get_cwd_path(cwd, sizeof(cwd));
+        if (strcmp(cwd, "/") == 0) {
+            // /user1
+            strncpy(full_path, "/", sizeof(full_path) - 1);
+            full_path[sizeof(full_path) - 1] = '\0';
+            strncat(full_path, path, sizeof(full_path) - strlen(full_path) - 1);
+        } else {
+            // /home/user1
+            strncpy(full_path, cwd, sizeof(full_path) - 1);
+            full_path[sizeof(full_path) - 1] = '\0';
+            strncat(full_path, "/", sizeof(full_path) - strlen(full_path) - 1);
+            strncat(full_path, path, sizeof(full_path) - strlen(full_path) - 1);
+        }
+    } else {
+        strncpy(full_path, path, sizeof(full_path) - 1);
+        full_path[sizeof(full_path) - 1] = '\0';
+    }
+    printf("Changing directory to: %s\n", full_path);
+    if (path_to_inode(full_path, &inode_no) != 0) {
+        printf("Error: Path does not exist\n");
         return -1;
     }
-    
     if (!is_directory(inode_no)) {
+        printf("Error: Path is not a directory\n");
         return -1;
     }
-    
     // 检查权限
     if (!check_permission(inode_no, EXT2_S_IXUSR)) {
+        printf("Error: No execute permission on directory\n");
         return -1;
     }
-    
-    // 这里可以设置当前工作目录，简化实现
     set_cwd_inode(inode_no);
+    printf("Successfully changed to directory with inode: %u\n", inode_no);
     return 0;
 }
 
@@ -333,11 +350,13 @@ int path_to_inode(const char *path, uint32_t *inode_no) {
     path_copy[sizeof(path_copy) - 1] = '\0';
     
     char *token = strtok(path_copy, "/");
-    uint32_t current_inode = 1; // 从根目录开始
+    uint32_t current_inode = EXT2_ROOT_INO; // 从根目录开始
     
     while (token != NULL) {
         ext2_dir_entry_t entry;
         if (find_directory_entry(current_inode, token, &entry) != 0) {
+            //减少重复错误信息，只在调试模式下输出
+            //printf("Error: Cannot find '%s' in inode %u\n", token, current_inode);//根目录inode 2，根目录下没有root目录，所以报错
             return -1;
         }
         
@@ -474,4 +493,56 @@ int normalize_path(char *path) {
     *dst = '\0';
     
     return 0;
+}
+
+// 查找子目录的inode
+int find_child_inode(uint32_t parent_inode, const char *name, uint32_t *child_inode) {
+    ext2_dir_entry_t entry;
+    if (find_directory_entry(parent_inode, name, &entry) == 0) {
+        *child_inode = entry.inode;
+        return 0;
+    }
+    return -1;
 } 
+
+// 递归创建多级目录
+int create_directory_recursive(const char *path, uint16_t mode) {
+    if (!path || strlen(path) == 0 || strcmp(path, "/") == 0) return 0;
+    
+    char temp[MAX_PATH];
+    strncpy(temp, path, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+    normalize_path(temp);
+    
+    // 从根开始逐级创建
+    char partial[MAX_PATH] = "";
+    char *token = strtok(temp, "/");
+    int first = 1;
+    
+    while (token) {
+        if (first) {
+            snprintf(partial, sizeof(partial), "/%s", token);
+            first = 0;
+        } else {
+            strncat(partial, "/", sizeof(partial) - strlen(partial) - 1);
+            strncat(partial, token, sizeof(partial) - strlen(partial) - 1);
+        }
+        
+        // 检查当前路径是否存在
+        uint32_t inode_no;
+        if (path_to_inode(partial, &inode_no) != 0) {
+            // 不存在则创建
+            printf("DEBUG: Creating directory recursively: %s\n", partial);
+            if (create_directory(partial, mode) != 0) {
+                printf("DEBUG: Failed to create directory: %s\n", partial);
+                return -1;
+            }
+        } else {
+            printf("DEBUG: Directory already exists: %s\n", partial);
+        }
+        
+        token = strtok(NULL, "/");
+    }
+    
+    return 0;
+}

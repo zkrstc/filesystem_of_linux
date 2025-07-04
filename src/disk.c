@@ -61,7 +61,6 @@ int find_free_bit(uint8_t *bitmap, int size)
 buffer：目标内存缓冲区，用于存储读取的数据*/
 int read_block(uint32_t block_no, void *buffer)
 {
-    printf("DEBUG: read_block(%u): disk_fd=%d\n", block_no, disk_fd);
     if (disk_fd == -1)
     {
         return -1;
@@ -139,7 +138,6 @@ int read_inode(uint32_t inode_no, ext2_inode_t *inode)
     {
         return -1;
     }
-    printf("DEBUG: read_inode(%u): block_no=%u, offset=%u\n", inode_no, block_no, offset);
     /*buffer + offset * sizeof(ext2_inode_t) 计算 inode 在缓冲区中的起始地址。
         memcpy 将数据拷贝到 inode 结构体。
 

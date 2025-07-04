@@ -1,0 +1,113 @@
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ make clean
+rm -f src/main.o src/ext2.o src/inode.o src/directory.o src/user.o src/disk.o src/commands.o ext2fs
+rm -f *.img
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ make
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/main.c -o src/main.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/ext2.c -o src/ext2.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/inode.c -o src/inode.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/directory.c -o src/directory.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/user.c -o src/user.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/disk.c -o src/disk.o
+gcc -Wall -Wextra -std=c99 -g -Iinclude -c src/commands.c -o src/commands.o
+gcc src/main.o src/ext2.o src/inode.o src/directory.o src/user.o src/disk.o src/commands.o -o ext2fs
+zkr@zkr-virtual-machine:~/Desktop/filesystem_of_linux$ ./ext2fs 
+========================================
+    EXT2 File System Simulator
+========================================
+This is a simplified EXT2 file system implementation
+Features:
+- File and directory operations
+- User authentication and permissions
+- Inode-based file management
+- Block allocation and bitmap management
+- Multi-level directory structure
+========================================
+
+EXT2 File System Simulator
+Type 'help' for available commands
+anonymous:/> format disk.img
+Formatting disk image: disk.img
+Formatting EXT2 file system: disk.img
+DEBUG: root_inode = 2
+EXT2 file system formatted successfully
+Disk image formatted successfully
+anonymous:/> mount disk.img
+Disk image mounted: disk.img
+anonymous:/> login root root
+DEBUG: Creating directory recursively: /root
+DEBUG: get_parent_inode called with path: /root
+DEBUG: Path after removing last component: '', child name: root
+DEBUG: Parent is root directory, inode: 2
+Login successful. Welcome, root!
+root:/root> dir
+Directory listing for: /root
+Name                 Inode      Type       Size       Permissions Address   
+-------------------------------------------------------------------------------
+.                    3          d          0          drwxr-xr-x 3         
+..                   2          d          0          drwxr-xr-x 2         
+root:/root> cd ..
+Changing directory to: /root/..
+Successfully changed to directory with inode: 2
+Changed directory to: ..
+root:/> dir
+Directory listing for: /
+Name                 Inode      Type       Size       Permissions Address   
+-------------------------------------------------------------------------------
+.                    2          d          0          drwxr-xr-x 2         
+..                   2          d          0          drwxr-xr-x 2         
+root                 3          d          0          drwxr-xr-x 3         
+root:/> cd root
+Changing directory to: /root
+Successfully changed to directory with inode: 3
+Changed directory to: root
+root:/root> cd ..
+Changing directory to: /root/..
+Successfully changed to directory with inode: 2
+Changed directory to: ..
+root:/> logout
+Logout successful. Goodbye, root!
+anonymous:/> login user1 user1
+DEBUG: get_parent_inode called with path: /home/user1
+DEBUG: Path after removing last component: '/home', child name: user1
+DEBUG: Resolving parent path: /home
+DEBUG: path_to_inode result: -1, parent inode: 32767
+DEBUG: Creating directory recursively: /home
+DEBUG: get_parent_inode called with path: /home
+DEBUG: Path after removing last component: '', child name: home
+DEBUG: Parent is root directory, inode: 2
+DEBUG: get_parent_inode called with path: /home/user1
+DEBUG: Path after removing last component: '/home', child name: user1
+DEBUG: Resolving parent path: /home
+DEBUG: path_to_inode result: 0, parent inode: 4
+Login successful. Welcome, user1!
+user1:/home/user1> dir
+Error: Permission denied - cannot access this directory
+user1:/home/user1> logout
+Logout successful. Goodbye, user1!
+anonymous:/home/user1> login root root
+Login successful. Welcome, root!
+root:/root> dir
+Directory listing for: /root
+Name                 Inode      Type       Size       Permissions Address   
+-------------------------------------------------------------------------------
+.                    3          d          0          drwxr-xr-x 3         
+..                   2          d          0          drwxr-xr-x 2         
+root:/root> cd ..
+Changing directory to: /root/..
+Successfully changed to directory with inode: 2
+Changed directory to: ..
+root:/> cd home
+Changing directory to: /home
+Successfully changed to directory with inode: 4
+Changed directory to: home
+root:/home> cd user1
+Changing directory to: /home/user1
+Successfully changed to directory with inode: 5
+Changed directory to: user1
+root:/home/user1> dir
+Directory listing for: /home/user1
+Name                 Inode      Type       Size       Permissions Address   
+-------------------------------------------------------------------------------
+.                    5          d          0          drwxr-xr-x 5         
+..                   4          d          0          drwxr-xr-x 4         
+root:/home/user1> 

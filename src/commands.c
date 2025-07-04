@@ -18,6 +18,12 @@ int cmd_create(const char *path) {
         return -1;
     }
     
+    // 检查用户是否有权限创建文件
+    if (!check_user_path_access(path, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot create file in this location\n");
+        return -1;
+    }
+    
     uint32_t parent_inode;
     char child_name[MAX_FILENAME];
     
@@ -62,6 +68,12 @@ int cmd_create(const char *path) {
 int cmd_delete(const char *path) {
     if (!is_logged_in()) {
         printf("Error: Not logged in\n");
+        return -1;
+    }
+    
+    // 检查用户是否有权限删除文件
+    if (!check_user_path_access(path, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot delete file in this location\n");
         return -1;
     }
     
@@ -111,6 +123,17 @@ int cmd_open(const char *path, int flags) {
         return -1;
     }
     
+    // 检查用户是否有权限访问文件,flags=1表示只读，flags=2表示只写，flags=3表示读写
+    int access = 0;
+    if (flags & O_RDONLY) access |= EXT2_S_IRUSR;
+    if (flags & O_WRONLY) access |= EXT2_S_IWUSR;
+    if (flags & O_RDWR) access |= (EXT2_S_IRUSR | EXT2_S_IWUSR);
+    
+    if (!check_user_path_access(path, access)) {
+        printf("Error: Permission denied - cannot access this file\n");
+        return -1;
+    }
+    
     uint32_t inode_no;
     if (path_to_inode(path, &inode_no) != 0) {
         printf("Error: File not found\n");
@@ -123,11 +146,6 @@ int cmd_open(const char *path, int flags) {
     }
     
     // 检查权限
-    int access = 0;
-    if (flags & O_RDONLY) access |= EXT2_S_IRUSR;
-    if (flags & O_WRONLY) access |= EXT2_S_IWUSR;
-    if (flags & O_RDWR) access |= (EXT2_S_IRUSR | EXT2_S_IWUSR);
-    
     if (!check_permission(inode_no, access)) {
         printf("Error: Permission denied\n");
         return -1;
@@ -250,12 +268,24 @@ int cmd_dir(const char *path) {
         return -1;
     }
     
+    // 检查用户是否有权限列出目录
+    if (!check_user_path_access(path, EXT2_S_IRUSR)) {
+        printf("Error: Permission denied - cannot access this directory\n");
+        return -1;
+    }
+    
     return list_directory(path);
 }
 
 int cmd_mkdir(const char *path) {
     if (!is_logged_in()) {
         printf("Error: Not logged in\n");
+        return -1;
+    }
+    
+    // 检查用户是否有权限创建目录
+    if (!check_user_path_access(path, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot create directory in this location\n");
         return -1;
     }
     
@@ -286,6 +316,12 @@ int cmd_rmdir(const char *path) {
 int cmd_cd(const char *path) {
     if (!is_logged_in()) {
         printf("Error: Not logged in\n");
+        return -1;
+    }
+    
+    // 检查用户是否有权限进入目录
+    if (!check_user_path_access(path, EXT2_S_IXUSR)) {
+        printf("Error: Permission denied - cannot access this directory\n");
         return -1;
     }
     
@@ -389,6 +425,12 @@ int cmd_chmod(const char *path, uint16_t mode) {
         return -1;
     }
     
+    // 检查是否为root用户
+    if (get_current_uid() != 0) {
+        printf("Error: Only root can change file permissions\n");
+        return -1;
+    }
+    
     uint32_t inode_no;
     if (path_to_inode(path, &inode_no) != 0) {
         printf("Error: File not found\n");
@@ -410,6 +452,12 @@ int cmd_chown(const char *path, uint16_t uid, uint16_t gid) {
         return -1;
     }
     
+    // 检查是否为root用户
+    if (get_current_uid() != 0) {
+        printf("Error: Only root can change file ownership\n");
+        return -1;
+    }
+    
     uint32_t inode_no;
     if (path_to_inode(path, &inode_no) != 0) {
         printf("Error: File not found\n");
@@ -421,6 +469,28 @@ int cmd_chown(const char *path, uint16_t uid, uint16_t gid) {
         printf("Owner changed: %s\n", path);
     } else {
         printf("Error: Failed to change owner\n");
+    }
+    return result;
+}
+
+// 特权命令：添加用户
+int cmd_useradd(const char *username, const char *password, uint16_t uid, uint16_t gid) {
+    if (!is_logged_in()) {
+        printf("Error: Not logged in\n");
+        return -1;
+    }
+    
+    // 检查是否为root用户
+    if (get_current_uid() != 0) {
+        printf("Error: Only root can add users\n");
+        return -1;
+    }
+    
+    int result = add_user(username, password, uid, gid);
+    if (result == 0) {
+        printf("User added: %s (uid=%u, gid=%u)\n", username, uid, gid);
+    } else {
+        printf("Error: Failed to add user\n");
     }
     return result;
 }
@@ -445,8 +515,9 @@ void cmd_help(void) {
     printf("  close <fd>              - Close file\n");
     printf("  read <fd> <size>        - Read from file\n");
     printf("  write <fd> <data>       - Write to file\n");
-    printf("  chmod <path> <mode>     - Change file permissions\n");
-    printf("  chown <path> <uid> <gid> - Change file owner\n");
+    printf("  chmod <path> <mode>     - Change file permissions (root only)\n");
+    printf("  chown <path> <uid> <gid> - Change file owner (root only)\n");
+    printf("  useradd <user> <pass> <uid> <gid> - Add new user (root only)\n");
     printf("  help                    - Show this help\n");
     printf("  quit                    - Exit program\n");
 }
@@ -458,41 +529,104 @@ void print_usage(void) {
 }
 
 // 获取当前目录路径
-static void get_cwd_path(char *buf, size_t size) {
+void get_cwd_path(char *buf, size_t size) {
     uint32_t inode = get_cwd_inode();
     if (inode == EXT2_ROOT_INO) {
         strncpy(buf, "/", size);
         buf[size-1] = '\0';
         return;
     }
-    // 反向查找父目录，拼接路径（简化实现：只支持一级目录）
-    // 实际可递归查找父目录并拼接
-    // 这里只做简单实现
-    uint32_t parent_inode = EXT2_ROOT_INO;
-    ext2_inode_t parent;
-    char name[MAX_FILENAME+1] = "";
-    // 遍历根目录下所有项，找到当前inode的名字
-    if (read_inode(parent_inode, &parent) == 0) {
-        uint8_t buffer[BLOCK_SIZE];
-        for (int b = 0; b < 12; b++) {
-            uint32_t block_no;
-            if (get_inode_block(parent_inode, b, &block_no) != 0 || block_no == 0) continue;
-            if (read_block(block_no, buffer) != 0) continue;
-            ext2_dir_entry_t *entries = (ext2_dir_entry_t*)buffer;
-            int entry_count = BLOCK_SIZE / sizeof(ext2_dir_entry_t);
-            for (int i = 0; i < entry_count; i++) {
-                if (entries[i].inode == inode) {
-                    snprintf(name, sizeof(name), "%s", entries[i].name);
-                    break;
+    
+    // 构建完整路径
+    char path[MAX_PATH] = "";
+    uint32_t current_inode = inode;
+    
+    while (current_inode != EXT2_ROOT_INO) {
+        // 查找当前inode在父目录中的名字
+        uint32_t parent_inode = EXT2_ROOT_INO;
+        char current_name[MAX_FILENAME + 1] = "";
+        
+        // 尝试从当前inode的..目录项获取父目录
+        ext2_inode_t current;
+        if (read_inode(current_inode, &current) == 0) {
+            uint8_t buffer[BLOCK_SIZE];
+            for (int b = 0; b < 12; b++) {
+                uint32_t block_no;
+                if (get_inode_block(current_inode, b, &block_no) != 0 || block_no == 0) continue;
+                if (read_block(block_no, buffer) != 0) continue;
+                ext2_dir_entry_t *entries = (ext2_dir_entry_t*)buffer;
+                int entry_count = BLOCK_SIZE / sizeof(ext2_dir_entry_t);
+                for (int i = 0; i < entry_count; i++) {
+                    if (entries[i].inode != 0 && strcmp(entries[i].name, "..") == 0) {
+                        parent_inode = entries[i].inode;
+                        break;
+                    }
                 }
             }
         }
+        
+        // 在父目录中查找当前inode的名字
+        if (parent_inode != EXT2_ROOT_INO) {
+            ext2_dir_entry_t entry;
+            if (find_directory_entry(parent_inode, ".", &entry) == 0) {
+                // 遍历父目录的所有条目
+                uint8_t buffer[BLOCK_SIZE];
+                for (int b = 0; b < 12; b++) {
+                    uint32_t block_no;
+                    if (get_inode_block(parent_inode, b, &block_no) != 0 || block_no == 0) continue;
+                    if (read_block(block_no, buffer) != 0) continue;
+                    ext2_dir_entry_t *entries = (ext2_dir_entry_t*)buffer;
+                    int entry_count = BLOCK_SIZE / sizeof(ext2_dir_entry_t);
+                    for (int i = 0; i < entry_count; i++) {
+                        if (entries[i].inode == current_inode) {
+                            strncpy(current_name, entries[i].name, sizeof(current_name) - 1);
+                            current_name[sizeof(current_name) - 1] = '\0';
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // 在根目录中查找
+            ext2_dir_entry_t entry;
+            if (find_directory_entry(EXT2_ROOT_INO, ".", &entry) == 0) {
+                uint8_t buffer[BLOCK_SIZE];
+                for (int b = 0; b < 12; b++) {
+                    uint32_t block_no;
+                    if (get_inode_block(EXT2_ROOT_INO, b, &block_no) != 0 || block_no == 0) continue;
+                    if (read_block(block_no, buffer) != 0) continue;
+                    ext2_dir_entry_t *entries = (ext2_dir_entry_t*)buffer;
+                    int entry_count = BLOCK_SIZE / sizeof(ext2_dir_entry_t);
+                    for (int i = 0; i < entry_count; i++) {
+                        if (entries[i].inode == current_inode) {
+                            strncpy(current_name, entries[i].name, sizeof(current_name) - 1);
+                            current_name[sizeof(current_name) - 1] = '\0';
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (current_name[0]) {
+            char temp[MAX_PATH];
+            strncpy(temp, "/", sizeof(temp) - 1);
+            temp[sizeof(temp) - 1] = '\0';
+            strncat(temp, current_name, sizeof(temp) - strlen(temp) - 1);
+            strncat(temp, path, sizeof(temp) - strlen(temp) - 1);
+            strncpy(path, temp, sizeof(path) - 1);
+            path[sizeof(path) - 1] = '\0';
+        }
+        
+        current_inode = parent_inode;
     }
-    if (name[0]) {
-        snprintf(buf, size, "/%s", name);
+    
+    if (path[0] == '\0') {
+        strncpy(buf, "/", size);
     } else {
-        snprintf(buf, size, "/?");
+        strncpy(buf, path, size);
     }
+    buf[size-1] = '\0';
 }
 
 // 命令解析
@@ -558,7 +692,9 @@ int parse_command(char *line) {
     else if (strcmp(token, "dir") == 0) {
         char *path = strtok(NULL, " \t\n");
         if (path == NULL) {
-            path = "/";
+            static char cwd_buf[MAX_PATH];
+            get_cwd_path(cwd_buf, sizeof(cwd_buf));
+            path = cwd_buf;
         }
         return cmd_dir(path);
     }
@@ -652,6 +788,19 @@ int parse_command(char *line) {
         uint16_t uid = atoi(uid_str);
         uint16_t gid = atoi(gid_str);
         return cmd_chown(path, uid, gid);
+    }
+    else if (strcmp(token, "useradd") == 0) {
+        char *username = strtok(NULL, " \t\n");
+        char *password = strtok(NULL, " \t\n");
+        char *uid_str = strtok(NULL, " \t\n");
+        char *gid_str = strtok(NULL, " \t\n");
+        if (username == NULL || password == NULL || uid_str == NULL || gid_str == NULL) {
+            printf("Error: Missing username, password, uid, or gid\n");
+            return -1;
+        }
+        uint16_t uid = atoi(uid_str);
+        uint16_t gid = atoi(gid_str);
+        return cmd_useradd(username, password, uid, gid);
     }
     else if (strcmp(token, "help") == 0) {
         cmd_help();

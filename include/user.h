@@ -17,6 +17,8 @@ int is_logged_in(void);
 // 权限检查
 int check_file_permission(uint32_t inode_no, int access);
 int check_directory_permission(uint32_t inode_no, int access);
+int check_path_permission(const char *path, int access);
+int check_user_path_access(const char *path, int access);
 
 // 当前用户信息
 uint16_t get_current_uid(void);

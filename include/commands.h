@@ -32,6 +32,9 @@ int cmd_status(void);
 int cmd_chmod(const char *path, uint16_t mode);
 int cmd_chown(const char *path, uint16_t uid, uint16_t gid);
 
+// 特权命令
+int cmd_useradd(const char *username, const char *password, uint16_t uid, uint16_t gid);
+
 // 帮助命令
 void cmd_help(void);
 void print_usage(void);
@@ -39,5 +42,7 @@ void print_usage(void);
 // 命令解析
 int parse_command(char *line);
 void command_loop(void);
+
+void get_cwd_path(char *buf, size_t size);
 
 #endif // COMMANDS_H 

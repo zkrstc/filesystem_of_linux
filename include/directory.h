@@ -5,6 +5,7 @@
 
 // 目录操作
 int create_directory(const char *path, uint16_t mode);
+int create_directory_recursive(const char *path, uint16_t mode);
 int delete_directory(const char *path);
 int list_directory(const char *path);
 int change_directory(const char *path);
@@ -27,5 +28,6 @@ int create_dot_entries(uint32_t dir_inode, uint32_t parent_inode);
 // 工具函数
 int is_valid_filename(const char *name);
 int normalize_path(char *path);
+int find_child_inode(uint32_t parent_inode, const char *name, uint32_t *child_inode);
 
 #endif // DIRECTORY_H 

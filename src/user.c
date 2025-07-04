@@ -1,6 +1,8 @@
 #include "../include/user.h"
 #include "../include/ext2.h"
 #include "../include/disk.h"
+#include "../include/directory.h"
+#include "../include/inode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,7 +125,43 @@ int login(const char *username, const char *password) {
     // 简单的密码验证（实际应用中应使用加密）
     if (strcmp(fs.users[user_index].password, password) == 0) {
         fs.current_user = user_index;
-        set_cwd_inode(EXT2_ROOT_INO); // 登录后初始化当前目录为根目录
+        
+        // 根据用户类型设置家目录
+        if (strcmp(username, "root") == 0) {
+            // root用户的家目录是 /root
+            uint32_t root_home_inode;
+            if (path_to_inode("/root", &root_home_inode) == 0) {
+                set_cwd_inode(root_home_inode);
+            } else {
+                // 如果 /root 目录不存在，创建它（root用户有权限）
+                if (create_directory_recursive("/root", EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | EXT2_S_IRGRP | EXT2_S_IXGRP | EXT2_S_IROTH | EXT2_S_IXOTH) == 0) {
+                    path_to_inode("/root", &root_home_inode);
+                    set_cwd_inode(root_home_inode);
+                } else {
+                    set_cwd_inode(EXT2_ROOT_INO); // 回退到根目录
+                }
+            }
+        } else {
+            // 普通用户的家目录是 /home/username
+            char home_path[256];
+            snprintf(home_path, sizeof(home_path), "/home/%s", username);
+            uint32_t home_inode;
+            if (path_to_inode(home_path, &home_inode) == 0) {
+                set_cwd_inode(home_inode);
+            } else {
+                // 如果家目录不存在，临时切换到root权限创建它
+                int original_user = fs.current_user;
+                fs.current_user = 0; // 临时切换到root用户
+                if (create_directory(home_path, 0755) == 0) {
+                    path_to_inode(home_path, &home_inode);
+                    set_cwd_inode(home_inode);
+                } else {
+                    set_cwd_inode(EXT2_ROOT_INO); // 回退到根目录
+                }
+                fs.current_user = original_user; // 恢复原用户
+            }
+        }
+        
         printf("Login successful. Welcome, %s!\n", username);
         return 0;
     }
@@ -172,6 +210,73 @@ int check_file_permission(uint32_t inode_no, int access) {
 
 int check_directory_permission(uint32_t inode_no, int access) {
     return check_file_permission(inode_no, access);
+}
+
+// 检查路径权限（包括路径上的所有目录）
+int check_path_permission(const char *path, int access) {
+    uint16_t uid = get_current_uid();
+    
+    // root用户有所有权限
+    if (uid == 0) {
+        return 1;
+    }
+    
+    // 解析路径，检查每一级目录的权限
+    char path_copy[MAX_PATH];
+    strncpy(path_copy, path, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+    
+    // 从根目录开始
+    uint32_t current_inode = EXT2_ROOT_INO;
+    
+    // 跳过开头的斜杠
+    char *token = strtok(path_copy, "/");
+    
+    while (token != NULL) {
+        // 检查当前目录的访问权限
+        if (!check_directory_permission(current_inode, EXT2_S_IXUSR)) {
+            return 0; // 没有执行权限
+        }
+        
+        // 查找下一级目录
+        uint32_t child_inode;
+        if (find_child_inode(current_inode, token, &child_inode) != 0) {
+            // 如果找不到子目录，检查当前目录的写权限（用于创建）
+            if (access & EXT2_S_IWUSR) {
+                return check_directory_permission(current_inode, EXT2_S_IWUSR);
+            }
+            return 0;
+        }
+        
+        current_inode = child_inode;
+        token = strtok(NULL, "/");
+    }
+    
+    // 检查最终目标的权限
+    return check_file_permission(current_inode, access);
+}
+
+// 检查用户是否有权限访问特定路径
+int check_user_path_access(const char *path, int access) {
+    uint16_t uid = get_current_uid();
+
+    // root用户有所有权限
+    if (uid == 0) {
+        return 1;
+    }
+
+    // 普通用户只能访问自己的家目录及其下内容，以及/home目录本身（允许cd ..）
+    if (uid == 1) { // user1
+        if (strcmp(path, "/home") == 0) {
+            return check_path_permission(path, access);
+        }
+        if (strncmp(path, "/home/user1", 11) == 0) {
+            return check_path_permission(path, access);
+        }
+        return 0; // 不能访问其他路径
+    }
+
+    return 0; // 其他用户无权限
 }
 
 // 当前用户信息
