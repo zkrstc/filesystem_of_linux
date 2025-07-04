@@ -222,7 +222,16 @@ int cmd_read(int fd, void *buffer, size_t size) {
     
     ssize_t bytes_read = read_inode_data(file->inode_no, buffer, size, file->offset);
     if (bytes_read > 0) {
+        // 输出读取的内容到终端
+        printf("Read %zd bytes:\n", bytes_read);
+        fwrite(buffer, 1, bytes_read, stdout);  // 安全输出二进制/文本数据
+        printf("\n");  // 添加换行符
+        
         file->offset += bytes_read;
+    } else if (bytes_read == 0) {
+        printf("End of file reached\n");
+    } else {
+        printf("Error: Failed to read file\n");
     }
     
     return bytes_read;
