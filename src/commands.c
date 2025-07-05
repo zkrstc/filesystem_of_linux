@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <errno.h>
 
 // 文件操作命令
 int cmd_create(const char *path) {
@@ -236,7 +237,6 @@ int cmd_read(int fd, void *buffer, size_t size) {
     
     return bytes_read;
 }
-
 int cmd_write(int fd, const void *buffer, size_t size) {
     if (!is_logged_in()) {
         printf("Error: Not logged in\n");
@@ -265,9 +265,52 @@ int cmd_write(int fd, const void *buffer, size_t size) {
     ssize_t bytes_written = write_inode_data(file->inode_no, buffer, size, file->offset);
     if (bytes_written > 0) {
         file->offset += bytes_written;
+        printf("Wrote %zd bytes to fd=%d\n", bytes_written, fd);
+    } else if (bytes_written == 0) {
+        printf("No data written to fd=%d\n", fd);
+    } else {
+        printf("Error: Failed to write to file\n");
     }
     
     return bytes_written;
+}
+
+// 文件指针移动命令
+int cmd_lseek(int fd, off_t offset, int whence) {
+    if (!is_logged_in()) {
+        printf("Error: Not logged in\n");
+        return -1;
+    }
+    open_file_t *file = NULL;
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        if (fs.open_files[i].is_open && fs.open_files[i].fd == fd) {
+            file = &fs.open_files[i];
+            break;
+        }
+    }
+    if (file == NULL) {
+        printf("Error: Invalid file descriptor\n");
+        return -1;
+    }
+    uint32_t file_size = get_file_size(file->inode_no);
+    off_t new_offset = 0;
+    if (whence == SEEK_SET) {
+        new_offset = offset;
+    } else if (whence == SEEK_CUR) {
+        new_offset = file->offset + offset;
+    } else if (whence == SEEK_END) {
+        new_offset = file_size + offset;
+    } else {
+        printf("Error: Invalid whence\n");
+        return -1;
+    }
+    if (new_offset < 0 || new_offset > (off_t)file_size) {
+        printf("Error: Invalid offset\n");
+        return -1;
+    }
+    file->offset = new_offset;
+    printf("File offset set to %ld\n", (long)new_offset);
+    return new_offset;
 }
 
 // 目录操作命令
@@ -524,6 +567,7 @@ void cmd_help(void) {
     printf("  close <fd>              - Close file\n");
     printf("  read <fd> <size>        - Read from file\n");
     printf("  write <fd> <data>       - Write to file\n");
+    printf("  lseek <fd> <offset> <whence> - Move file pointer\n");
     printf("  chmod <path> <mode>     - Change file permissions (root only)\n");
     printf("  chown <path> <uid> <gid> - Change file owner (root only)\n");
     printf("  useradd <user> <pass> <uid> <gid> - Add new user (root only)\n");
@@ -775,6 +819,26 @@ int parse_command(char *line) {
         }
         int fd = atoi(fd_str);
         return cmd_write(fd, data, strlen(data));
+    }
+    else if (strcmp(token, "lseek") == 0) {
+        char *fd_str = strtok(NULL, " \t\n");
+        char *offset_str = strtok(NULL, " \t\n");
+        char *whence_str = strtok(NULL, " \t\n");
+        if (fd_str == NULL || offset_str == NULL || whence_str == NULL) {
+            printf("Error: Missing file descriptor, offset, or whence\n");
+            return -1;
+        }
+        int fd = atoi(fd_str);
+        off_t offset = atoll(offset_str);
+        int whence = -1;
+        if (strcmp(whence_str, "SET") == 0) whence = SEEK_SET;
+        else if (strcmp(whence_str, "CUR") == 0) whence = SEEK_CUR;
+        else if (strcmp(whence_str, "END") == 0) whence = SEEK_END;
+        else {
+            printf("Error: whence must be SET, CUR, or END\n");
+            return -1;
+        }
+        return cmd_lseek(fd, offset, whence);
     }
     else if (strcmp(token, "chmod") == 0) {
         char *path = strtok(NULL, " \t\n");

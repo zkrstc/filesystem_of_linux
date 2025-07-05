@@ -197,15 +197,29 @@ int check_file_permission(uint32_t inode_no, int access) {
     }
     
     uint16_t mode = 0;
+    uint16_t access_mask = 0;
+    
     if (uid == inode.i_uid) {
         mode = (inode.i_mode >> 6) & 0x7;
+        access_mask = (access >> 6) & 0x7;
+        printf("[DEBUG] check_file_permission: inode %u, uid=%u matches owner (uid=%u), checking owner permissions mode=0x%x, access=0x%x\n", 
+               inode_no, uid, inode.i_uid, mode, access_mask);
     } else if (gid == inode.i_gid) {
         mode = (inode.i_mode >> 3) & 0x7;
+        access_mask = (access >> 3) & 0x7;
+        printf("[DEBUG] check_file_permission: inode %u, gid=%u matches group (gid=%u), checking group permissions mode=0x%x, access=0x%x\n", 
+               inode_no, gid, inode.i_gid, mode, access_mask);
     } else {
         mode = inode.i_mode & 0x7;
+        access_mask = access & 0x7;
+        printf("[DEBUG] check_file_permission: inode %u, uid=%u, checking other permissions mode=0x%x, access=0x%x\n", 
+               inode_no, uid, mode, access_mask);
     }
     
-    return (mode & access) == access;
+    int result = (mode & access_mask) == access_mask;
+    printf("[DEBUG] check_file_permission: inode %u, mode=0x%x, access_mask=0x%x, result=%d\n", 
+           inode_no, mode, access_mask, result);
+    return result;
 }
 
 int check_directory_permission(uint32_t inode_no, int access) {
@@ -234,7 +248,25 @@ int check_path_permission(const char *path, int access) {
     
     while (token != NULL) {
         // 检查当前目录的访问权限
-        if (!check_directory_permission(current_inode, EXT2_S_IXUSR)) {
+        printf("[DEBUG] check_path_permission: checking directory inode %u for execute permission\n", current_inode);
+        
+        // 根据当前用户类型选择正确的执行权限位
+        int execute_permission;
+        ext2_inode_t inode;
+        if (read_inode(current_inode, &inode) == 0) {
+            if (uid == inode.i_uid) {
+                execute_permission = EXT2_S_IXUSR;
+            } else if (get_current_gid() == inode.i_gid) {
+                execute_permission = EXT2_S_IXGRP;
+            } else {
+                execute_permission = EXT2_S_IXOTH;
+            }
+        } else {
+            execute_permission = EXT2_S_IXOTH; // 默认使用其他用户权限
+        }
+        
+        if (!check_directory_permission(current_inode, execute_permission)) {
+            printf("[DEBUG] check_path_permission: directory inode %u denied execute permission\n", current_inode);
             return 0; // 没有执行权限
         }
         
@@ -259,23 +291,43 @@ int check_path_permission(const char *path, int access) {
 // 检查用户是否有权限访问特定路径
 int check_user_path_access(const char *path, int access) {
     uint16_t uid = get_current_uid();
+    printf("[DEBUG] check_user_path_access: path='%s', access=0x%x, uid=%u\n", path, access, uid);
 
     // root用户有所有权限
     if (uid == 0) {
+        printf("[DEBUG] root user, allow all access.\n");
         return 1;
     }
 
     // 普通用户只能访问自己的家目录及其下内容，以及/home目录本身（允许cd ..）
     if (uid == 1) { // user1
+        printf("[DEBUG] user1 access check, path='%s'\n", path);
+        // 允许访问 /home 和 /home/user1 及其子目录
         if (strcmp(path, "/home") == 0) {
-            return check_path_permission(path, access);
+            int ret = check_path_permission(path, access);
+            printf("[DEBUG] user1 access /home, check_path_permission returned %d\n", ret);
+            return ret;
         }
+        // 允许访问 /home/user1 及其子目录
         if (strncmp(path, "/home/user1", 11) == 0) {
-            return check_path_permission(path, access);
+            // 允许访问 /home/user1 或 /home/user1/xxx
+            if (path[11] == '\0' || path[11] == '/' ) {
+                int ret = check_path_permission(path, access);
+                printf("[DEBUG] user1 access /home/user1..., check_path_permission returned %d\n", ret);
+                return ret;
+            }
         }
+        // 允许访问 .. 路径（即 /home 目录）
+        if (strcmp(path, "..") == 0) {
+            int ret = check_path_permission("/home", access);
+            printf("[DEBUG] user1 access .. (home), check_path_permission returned %d\n", ret);
+            return ret;
+        }
+        printf("[DEBUG] user1 denied access to path='%s'\n", path);
         return 0; // 不能访问其他路径
     }
 
+    printf("[DEBUG] other user (uid=%u) denied access to path='%s'\n", uid, path);
     return 0; // 其他用户无权限
 }
 

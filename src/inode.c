@@ -106,6 +106,8 @@ int get_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t *block_no)
     if (block_index < 12)
     {
         *block_no = inode.i_block[block_index];
+        printf("[DEBUG] get_inode_block: inode=%u, block_index=%u, block_no=%u\n", 
+               inode_no, block_index, *block_no);
         return 0;
     }
     else if (block_index < 12 + BLOCK_SIZE / 4) 
@@ -146,9 +148,13 @@ int set_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t block_no)
         return -1;
     }
 
+    printf("[DEBUG] set_inode_block: inode=%u, block_index=%u, block_no=%u\n", 
+           inode_no, block_index, block_no);
+
     if (block_index < 12)
     {
         inode.i_block[block_index] = block_no;
+        printf("[DEBUG] set_inode_block: setting i_block[%u] = %u\n", block_index, block_no);
     }
     else if (block_index < 12 + BLOCK_SIZE / 4)
     {
@@ -176,7 +182,9 @@ int set_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t block_no)
         return -1; // 超出范围
     }
 
-    return write_inode(inode_no, &inode);
+    int result = write_inode(inode_no, &inode);
+    printf("[DEBUG] set_inode_block: write_inode returned %d\n", result);
+    return result;
 }
 
 // 文件读写操作
@@ -188,8 +196,12 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
         return -1;
     }
 
+    printf("[DEBUG] read_inode_data: inode=%u, size=%u, offset=%ld, requested_size=%zu\n", 
+           inode_no, inode.i_size, offset, size);
+
     if (offset >= inode.i_size)
     {
+        printf("[DEBUG] read_inode_data: offset >= file size, returning 0\n");
         return 0;
     }
 
@@ -205,12 +217,14 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
 
         if (get_inode_block(inode_no, block_index, &block_no) != 0 || block_no == 0)
         {
+            printf("[DEBUG] read_inode_data: failed to get block %u or block is 0\n", block_index);
             break;
         }
 
         uint8_t block_buffer[BLOCK_SIZE];
         if (read_block(block_no, block_buffer) != 0)
         {
+            printf("[DEBUG] read_inode_data: failed to read block %u\n", block_no);
             break;
         }
 
@@ -231,6 +245,8 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
         current_offset += bytes_in_block;
     }
 
+    printf("[DEBUG] read_inode_data: actually read %zu bytes\n", bytes_read);
+
     // 更新访问时间
     update_atime(inode_no);
 
@@ -245,16 +261,18 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
         return -1;
     }
 
+    printf("[DEBUG] write_inode_data: inode=%u, current_size=%u, offset=%ld, size=%zu\n", 
+           inode_no, inode.i_size, offset, size);
+
     size_t bytes_written = 0;
-    size_t remaining = size;
+    size_t remaining = size;//remaining表示剩余要写入的字节数，一开始比如是2000字节的话
     off_t current_offset = offset;
 
     while (remaining > 0)
     {
-        uint32_t block_index = current_offset / BLOCK_SIZE;
-        uint32_t block_offset = current_offset % BLOCK_SIZE;
+        uint32_t block_index = current_offset / BLOCK_SIZE;//比如24字节，block_index=0
+        uint32_t block_offset = current_offset % BLOCK_SIZE;//如果2000字节，那么这里就是1024字节的溢出的部分
         uint32_t block_no;
-
         if (get_inode_block(inode_no, block_index, &block_no) != 0)
         {
             break;
@@ -262,14 +280,19 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
 
         if (block_no == 0)
         {
-            block_no = allocate_block();
+            block_no = allocate_block();//找到空闲的块号
             if (block_no == 0)
             {
                 break;
             }
-            if (set_inode_block(inode_no, block_index, block_no) != 0)
+            if (set_inode_block(inode_no, block_index, block_no) != 0)//如果是24字节，设置inode的i_block数组，这里设置了i_block[0]=block_no
+            //这里是更新了比如说inode为4号的i_block数组，但是前面的inode为4的i_block数组没有更新，所以需要重新读取inode
             {
                 free_block(block_no);
+                break;
+            }
+            // 重新读取inode以获取最新的i_block数组
+            if (read_inode(inode_no, &inode) != 0) {
                 break;
             }
         }
@@ -280,12 +303,13 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
             break;
         }
 
-        size_t bytes_in_block = BLOCK_SIZE - block_offset;
-        if (bytes_in_block > remaining)
+        size_t bytes_in_block = BLOCK_SIZE - block_offset;//根据上面如果是2000字节的话,BLOCK_SIZE-block_offset的话就是改块的剩余空间
+        if (bytes_in_block > remaining)//如果改块剩余空间大于剩余要写入的字节数，那么就写入剩余要写入的字节数
         {
             bytes_in_block = remaining;
         }
 
+        //否则的话就写入改块的剩余空间
         memcpy(block_buffer + block_offset, (char *)buffer + bytes_written, bytes_in_block);
 
         if (write_block(block_no, block_buffer) != 0)
@@ -303,10 +327,19 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
     {
         inode.i_size = current_offset;
         inode.i_blocks = (inode.i_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        printf("[DEBUG] write_inode_data: updating file size from %u to %u\n", 
+               (uint32_t)(current_offset - bytes_written), inode.i_size);
+        
+        // 将更新后的inode写回磁盘
+        if (write_inode(inode_no, &inode) != 0) {
+            printf("[DEBUG] write_inode_data: failed to write updated inode\n");
+        }
     }
 
     update_mtime(inode_no);
     update_ctime(inode_no);
+
+    printf("[DEBUG] write_inode_data: wrote %zu bytes, new size=%u\n", bytes_written, inode.i_size);
 
     return bytes_written;
 }
@@ -350,6 +383,9 @@ int truncate_inode(uint32_t inode_no, off_t length)
 返回 1（有权限）或 0（无权限）。*/
 int check_permission(uint32_t inode_no, int access)
 {
+
+
+
     ext2_inode_t inode;
     if (read_inode(inode_no, &inode) != 0)
     {
@@ -365,20 +401,25 @@ int check_permission(uint32_t inode_no, int access)
     }
 
     uint16_t mode = 0;
+    uint16_t access_mask = 0;
+    
     if (uid == inode.i_uid)
     {
         mode = (inode.i_mode >> 6) & 0x7;
+        access_mask = (access >> 6) & 0x7;
     }
     else if (gid == inode.i_gid)
     {
         mode = (inode.i_mode >> 3) & 0x7;
+        access_mask = (access >> 3) & 0x7;
     }
     else
     {
         mode = inode.i_mode & 0x7;
+        access_mask = access & 0x7;
     }
 
-    return (mode & access) == access;
+    return (mode & access_mask) == access_mask;
 }
 
 int change_permission(uint32_t inode_no, uint16_t mode)
