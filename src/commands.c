@@ -556,6 +556,16 @@ int cmd_useradd(const char *username, const char *password, uint16_t uid, uint16
             snprintf(home_path, sizeof(home_path), "/home/%s", username);
             if (create_directory(home_path, 0755) == 0) {
                 printf("Home directory created: %s\n", home_path);
+                
+                // 将家目录的所有者改为新用户
+                uint32_t home_inode;
+                if (path_to_inode(home_path, &home_inode) == 0) {
+                    if (change_owner(home_inode, uid, gid) == 0) {
+                        printf("Home directory ownership changed to %s (uid=%u, gid=%u)\n", username, uid, gid);
+                    } else {
+                        printf("Warning: Failed to change home directory ownership\n");
+                    }
+                }
             } else {
                 printf("Warning: Failed to create home directory %s\n", home_path);
             }

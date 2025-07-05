@@ -519,9 +519,12 @@ int is_directory(uint32_t inode_no)
     ext2_inode_t inode;
     if (read_inode(inode_no, &inode) != 0)
     {
+        printf("[DEBUG] is_directory: failed to read inode %u\n", inode_no);
         return 0;
     }
-    return (inode.i_mode & 0xF000) == EXT2_S_IFDIR;
+    int result = (inode.i_mode & 0xF000) == EXT2_S_IFDIR;
+    printf("[DEBUG] is_directory: inode %u, mode=0x%x, is_dir=%d\n", inode_no, inode.i_mode, result);
+    return result;
 }
 
 int is_regular_file(uint32_t inode_no)

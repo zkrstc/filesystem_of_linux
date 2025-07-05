@@ -307,31 +307,47 @@ int check_user_path_access(const char *path, int access) {
         return 1;
     }
 
+    // 获取当前用户名
+    const char *username = get_current_username();
+    
     // 普通用户只能访问自己的家目录及其下内容，以及/home目录本身（允许cd ..）
-    if (uid == 1) { // user1
-        printf("[DEBUG] user1 access check, path='%s'\n", path);
-        // 允许访问 /home 和 /home/user1 及其子目录
+    if (strcmp(username, "user1") == 0 || strcmp(username, "user2") == 0 || strcmp(username, "user3") == 0) {
+        printf("[DEBUG] %s access check, path='%s'\n", username, path);
+        
+        // 允许访问 /home 目录
         if (strcmp(path, "/home") == 0) {
             int ret = check_path_permission(path, access);
-            printf("[DEBUG] user1 access /home, check_path_permission returned %d\n", ret);
+            printf("[DEBUG] %s access /home, check_path_permission returned %d\n", username, ret);
             return ret;
         }
-        // 允许访问 /home/user1 及其子目录
-        if (strncmp(path, "/home/user1", 11) == 0) {
-            // 允许访问 /home/user1 或 /home/user1/xxx
-            if (path[11] == '\0' || path[11] == '/' ) {
+        
+        // 允许访问自己的家目录及其子目录
+        char home_path[256];
+        snprintf(home_path, sizeof(home_path), "/home/%s", username);
+        if (strncmp(path, home_path, strlen(home_path)) == 0) {
+            // 允许访问 /home/username 或 /home/username/xxx
+            if (path[strlen(home_path)] == '\0' || path[strlen(home_path)] == '/') {
                 int ret = check_path_permission(path, access);
-                printf("[DEBUG] user1 access /home/user1..., check_path_permission returned %d\n", ret);
+                printf("[DEBUG] %s access %s..., check_path_permission returned %d\n", username, home_path, ret);
                 return ret;
             }
         }
+        
         // 允许访问 .. 路径（即 /home 目录）
         if (strcmp(path, "..") == 0) {
             int ret = check_path_permission("/home", access);
-            printf("[DEBUG] user1 access .. (home), check_path_permission returned %d\n", ret);
+            printf("[DEBUG] %s access .. (home), check_path_permission returned %d\n", username, ret);
             return ret;
         }
-        printf("[DEBUG] user1 denied access to path='%s'\n", path);
+        
+        // 允许访问相对路径（当前目录下的文件）
+        if (path[0] != '/' && strchr(path, '/') == NULL) {
+            // 这是当前目录下的文件，允许访问
+            printf("[DEBUG] %s access relative path '%s', allowing\n", username, path);
+            return 1;
+        }
+        
+        printf("[DEBUG] %s denied access to path='%s'\n", username, path);
         return 0; // 不能访问其他路径
     }
 

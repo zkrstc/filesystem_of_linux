@@ -350,21 +350,34 @@ int path_to_inode(const char *path, uint32_t *inode_no) {
     path_copy[sizeof(path_copy) - 1] = '\0';
     
     char *token = strtok(path_copy, "/");
-    uint32_t current_inode = EXT2_ROOT_INO; // 从根目录开始
+    uint32_t current_inode;
+    
+    // 处理相对路径和绝对路径
+    if (path[0] == '/') {
+        // 绝对路径，从根目录开始
+        current_inode = EXT2_ROOT_INO;
+        printf("[DEBUG] path_to_inode: absolute path '%s', starting from root\n", path);
+    } else {
+        // 相对路径，从当前目录开始
+        current_inode = get_cwd_inode();
+        printf("[DEBUG] path_to_inode: relative path '%s', starting from cwd inode %u\n", path, current_inode);
+    }
     
     while (token != NULL) {
+        printf("[DEBUG] path_to_inode: looking for '%s' in inode %u\n", token, current_inode);
         ext2_dir_entry_t entry;
         if (find_directory_entry(current_inode, token, &entry) != 0) {
-            //减少重复错误信息，只在调试模式下输出
-            //printf("Error: Cannot find '%s' in inode %u\n", token, current_inode);//根目录inode 2，根目录下没有root目录，所以报错
+            printf("[DEBUG] path_to_inode: cannot find '%s' in inode %u\n", token, current_inode);
             return -1;
         }
         
+        printf("[DEBUG] path_to_inode: found '%s' -> inode %u\n", token, entry.inode);
         current_inode = entry.inode;
         token = strtok(NULL, "/");
     }
     
     *inode_no = current_inode;
+    printf("[DEBUG] path_to_inode: final inode for '%s' is %u\n", path, current_inode);
     return 0;
 }
 
