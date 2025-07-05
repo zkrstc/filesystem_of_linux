@@ -541,6 +541,25 @@ int cmd_useradd(const char *username, const char *password, uint16_t uid, uint16
     int result = add_user(username, password, uid, gid);
     if (result == 0) {
         printf("User added: %s (uid=%u, gid=%u)\n", username, uid, gid);
+        
+        // 为用户创建家目录
+        if (strcmp(username, "root") == 0) {
+            // root用户的家目录是 /root
+            if (create_directory("/root", 0755) == 0) {
+                printf("Home directory created: /root\n");
+            } else {
+                printf("Warning: Failed to create home directory /root\n");
+            }
+        } else {
+            // 普通用户的家目录是 /home/username
+            char home_path[256];
+            snprintf(home_path, sizeof(home_path), "/home/%s", username);
+            if (create_directory(home_path, 0755) == 0) {
+                printf("Home directory created: %s\n", home_path);
+            } else {
+                printf("Warning: Failed to create home directory %s\n", home_path);
+            }
+        }
     } else {
         printf("Error: Failed to add user\n");
     }

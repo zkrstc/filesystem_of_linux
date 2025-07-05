@@ -106,8 +106,7 @@ int get_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t *block_no)
     if (block_index < 12)
     {
         *block_no = inode.i_block[block_index];
-        printf("[DEBUG] get_inode_block: inode=%u, block_index=%u, block_no=%u\n", 
-               inode_no, block_index, *block_no);
+        //printf("[DEBUG] get_inode_block: inode=%u, block_index=%u, block_no=%u\n", inode_no, block_index, *block_no);
         return 0;
     }
     else if (block_index < 12 + BLOCK_SIZE / 4) 

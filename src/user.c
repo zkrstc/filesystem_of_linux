@@ -47,17 +47,25 @@ void init_users() {
         }
     }
     if (!has_root) {
-    memset(fs.users, 0, sizeof(fs.users));
+        memset(fs.users, 0, sizeof(fs.users));
         strcpy(fs.users[0].username, "root");
         strcpy(fs.users[0].password, "root");
         fs.users[0].uid = 0;
         fs.users[0].gid = 0;
         fs.users[0].is_active = 1;
+
         strcpy(fs.users[1].username, "user1");
         strcpy(fs.users[1].password, "user1");
         fs.users[1].uid = 1;
         fs.users[1].gid = 1;
         fs.users[1].is_active = 1;
+
+        strcpy(fs.users[2].username, "user2");
+        strcpy(fs.users[2].password, "user2");
+        fs.users[2].uid = 2;
+        fs.users[2].gid = 2;
+        fs.users[2].is_active = 1;
+
         save_users_to_disk();
     }
 }
