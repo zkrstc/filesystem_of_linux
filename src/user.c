@@ -142,7 +142,7 @@ int login(const char *username, const char *password) {
                 set_cwd_inode(root_home_inode);
             } else {
                 // 如果 /root 目录不存在，创建它（root用户有权限）
-                if (create_directory_recursive("/root", EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | EXT2_S_IRGRP | EXT2_S_IXGRP | EXT2_S_IROTH | EXT2_S_IXOTH) == 0) {
+                if (create_directory("/root", 0700) == 0) {
                     path_to_inode("/root", &root_home_inode);
                     set_cwd_inode(root_home_inode);
                 } else {
@@ -157,16 +157,40 @@ int login(const char *username, const char *password) {
             if (path_to_inode(home_path, &home_inode) == 0) {
                 set_cwd_inode(home_inode);
             } else {
-                // 如果家目录不存在，临时切换到root权限创建它
+                // 如果家目录不存在，临时切换为根用户创建
                 int original_user = fs.current_user;
-                fs.current_user = 0; // 临时切换到root用户
+                fs.current_user = 0; // 临时切换为root用户
+                
+                // 先创建 /home 目录（如果不存在）
+                uint32_t home_dir_inode;
+                if (path_to_inode("/home", &home_dir_inode) != 0) {
+                    if (create_directory("/home", 0755) != 0) {
+                        printf("Warning: Failed to create /home directory\n");
+                        fs.current_user = original_user;
+                        set_cwd_inode(EXT2_ROOT_INO);
+                        printf("Login successful. Welcome, %s!\n", username);
+                        return 0;
+                    }
+                }
+                
+                // 创建用户家目录
                 if (create_directory(home_path, 0755) == 0) {
                     path_to_inode(home_path, &home_inode);
                     set_cwd_inode(home_inode);
+                    
+                    // 将家目录的所有者改为新用户
+                    if (change_owner(home_inode, fs.users[original_user].uid, fs.users[original_user].gid) == 0) {
+                        printf("Home directory created and ownership set: %s\n", home_path);
+                    } else {
+                        printf("Warning: Failed to set home directory ownership\n");
+                    }
                 } else {
-                    set_cwd_inode(EXT2_ROOT_INO); // 回退到根目录
+                    printf("Warning: Failed to create home directory\n");
+                    set_cwd_inode(EXT2_ROOT_INO);
                 }
-                fs.current_user = original_user; // 恢复原用户
+                
+                // 恢复原用户身份
+                fs.current_user = original_user;
             }
         }
         
@@ -210,23 +234,15 @@ int check_file_permission(uint32_t inode_no, int access) {
     if (uid == inode.i_uid) {
         mode = (inode.i_mode >> 6) & 0x7;
         access_mask = (access >> 6) & 0x7;
-        printf("[DEBUG] check_file_permission: inode %u, uid=%u matches owner (uid=%u), checking owner permissions mode=0x%x, access=0x%x\n", 
-               inode_no, uid, inode.i_uid, mode, access_mask);
     } else if (gid == inode.i_gid) {
         mode = (inode.i_mode >> 3) & 0x7;
         access_mask = (access >> 3) & 0x7;
-        printf("[DEBUG] check_file_permission: inode %u, gid=%u matches group (gid=%u), checking group permissions mode=0x%x, access=0x%x\n", 
-               inode_no, gid, inode.i_gid, mode, access_mask);
     } else {
         mode = inode.i_mode & 0x7;
         access_mask = access & 0x7;
-        printf("[DEBUG] check_file_permission: inode %u, uid=%u, checking other permissions mode=0x%x, access=0x%x\n", 
-               inode_no, uid, mode, access_mask);
     }
     
     int result = (mode & access_mask) == access_mask;
-    printf("[DEBUG] check_file_permission: inode %u, mode=0x%x, access_mask=0x%x, result=%d\n", 
-           inode_no, mode, access_mask, result);
     return result;
 }
 
@@ -256,7 +272,6 @@ int check_path_permission(const char *path, int access) {
     
     while (token != NULL) {
         // 检查当前目录的访问权限
-        printf("[DEBUG] check_path_permission: checking directory inode %u for execute permission\n", current_inode);
         
         // 根据当前用户类型选择正确的执行权限位
         int execute_permission;
@@ -274,7 +289,6 @@ int check_path_permission(const char *path, int access) {
         }
         
         if (!check_directory_permission(current_inode, execute_permission)) {
-            printf("[DEBUG] check_path_permission: directory inode %u denied execute permission\n", current_inode);
             return 0; // 没有执行权限
         }
         
@@ -297,13 +311,12 @@ int check_path_permission(const char *path, int access) {
 }
 
 // 检查用户是否有权限访问特定路径
+// 这个函数主要处理路径级别的访问控制，而不是文件级别的权限
 int check_user_path_access(const char *path, int access) {
     uint16_t uid = get_current_uid();
-    printf("[DEBUG] check_user_path_access: path='%s', access=0x%x, uid=%u\n", path, access, uid);
 
     // root用户有所有权限
     if (uid == 0) {
-        printf("[DEBUG] root user, allow all access.\n");
         return 1;
     }
 
@@ -311,14 +324,46 @@ int check_user_path_access(const char *path, int access) {
     const char *username = get_current_username();
     
     // 普通用户只能访问自己的家目录及其下内容，以及/home目录本身（允许cd ..）
-    if (strcmp(username, "user1") == 0 || strcmp(username, "user2") == 0 || strcmp(username, "user3") == 0) {
-        printf("[DEBUG] %s access check, path='%s'\n", username, path);
+    if (strcmp(username, "root") != 0 && strcmp(username, "anonymous") != 0) {
+        
+        // 允许访问根目录 /，但只允许读和执行，不允许写
+        if (strcmp(path, "/") == 0) {
+            if ((access & EXT2_S_IWUSR) == 0) {
+                int ret = check_path_permission(path, access);
+                return ret;
+            } else {
+                return 0;
+            }
+        }
+        
+        // 允许访问根目录下的公共文件夹（如 /test），但只允许读和执行，不允许写
+        if (path[0] == '/' && strchr(path + 1, '/') == NULL) {
+            // 这是根目录下的直接子目录或文件
+            if (strcmp(path, "/home") != 0 && strcmp(path, "/root") != 0) {
+                // 不是 /home 或 /root，允许访问但只读
+                if ((access & EXT2_S_IWUSR) == 0) {
+                    int ret = check_path_permission(path, access);
+                    return ret;
+                } else {
+                    return 0;
+                }
+            }
+        }
         
         // 允许访问 /home 目录
         if (strcmp(path, "/home") == 0) {
             int ret = check_path_permission(path, access);
-            printf("[DEBUG] %s access /home, check_path_permission returned %d\n", username, ret);
             return ret;
+        }
+        
+        // 允许访问 /root 目录，只能读（不允许写/执行）
+        if (strcmp(path, "/root") == 0) {
+            if ((access & (EXT2_S_IWUSR | EXT2_S_IXUSR)) == 0) {
+                int ret = check_path_permission(path, access);
+                return ret;
+            } else {
+                return 0;
+            }
         }
         
         // 允许访问自己的家目录及其子目录
@@ -328,30 +373,75 @@ int check_user_path_access(const char *path, int access) {
             // 允许访问 /home/username 或 /home/username/xxx
             if (path[strlen(home_path)] == '\0' || path[strlen(home_path)] == '/') {
                 int ret = check_path_permission(path, access);
-                printf("[DEBUG] %s access %s..., check_path_permission returned %d\n", username, home_path, ret);
                 return ret;
+            }
+        }
+        
+        // 允许访问其他用户的家目录，但只允许读和执行，不允许写
+        if (strncmp(path, "/home/", 6) == 0) {
+            const char *path_part = path + 6; // 跳过 "/home/"
+            char *slash = strchr(path_part, '/');
+            if (slash != NULL) {
+                *slash = '\0'; // 临时截断，获取用户名
+                char other_username[256];
+                strncpy(other_username, path_part, sizeof(other_username) - 1);
+                other_username[sizeof(other_username) - 1] = '\0';
+                *slash = '/'; // 恢复路径
+                
+                // 如果不是自己的家目录，只允许读和执行
+                if (strcmp(other_username, username) != 0) {
+                    if ((access & EXT2_S_IWUSR) == 0) {
+                        // 只允许读和执行，不允许写
+                        int ret = check_path_permission(path, access);
+                        return ret;
+                    } else {
+                        return 0;
+                    }
+                }
+            } else {
+                // 路径是 /home/username 格式
+                if (strcmp(path_part, username) != 0) {
+                    if ((access & EXT2_S_IWUSR) == 0) {
+                        // 只允许读和执行，不允许写
+                        int ret = check_path_permission(path, access);
+                        return ret;
+                    } else {
+                        return 0;
+                    }
+                }
             }
         }
         
         // 允许访问 .. 路径（即 /home 目录）
         if (strcmp(path, "..") == 0) {
             int ret = check_path_permission("/home", access);
-            printf("[DEBUG] %s access .. (home), check_path_permission returned %d\n", username, ret);
             return ret;
         }
         
-        // 允许访问相对路径（当前目录下的文件）
+        // 对于相对路径，需要检查当前目录的权限
         if (path[0] != '/' && strchr(path, '/') == NULL) {
-            // 这是当前目录下的文件，允许访问
-            printf("[DEBUG] %s access relative path '%s', allowing\n", username, path);
-            return 1;
+            // 这是当前目录下的文件，需要检查当前目录的权限
+            uint32_t cwd_inode = get_cwd_inode();
+            
+            // 检查当前目录的读权限（用于列出文件）或写权限（用于创建文件）
+            int dir_access = (access & EXT2_S_IWUSR) ? EXT2_S_IWUSR : EXT2_S_IRUSR;
+            int ret = check_directory_permission(cwd_inode, dir_access);
+            return ret;
         }
         
-        printf("[DEBUG] %s denied access to path='%s'\n", username, path);
+        // 对于 "." 路径（当前目录），检查当前目录的权限
+        if (strcmp(path, ".") == 0) {
+            uint32_t cwd_inode = get_cwd_inode();
+            
+            // 检查当前目录的读权限（用于列出文件）或写权限（用于创建文件）
+            int dir_access = (access & EXT2_S_IWUSR) ? EXT2_S_IWUSR : EXT2_S_IRUSR;
+            int ret = check_directory_permission(cwd_inode, dir_access);
+            return ret;
+        }
+        
         return 0; // 不能访问其他路径
     }
 
-    printf("[DEBUG] other user (uid=%u) denied access to path='%s'\n", uid, path);
     return 0; // 其他用户无权限
 }
 

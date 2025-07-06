@@ -22,6 +22,9 @@ int get_parent_inode(const char *path, uint32_t *parent_inode, char *child_name)
 // 目录遍历
 int read_directory_entries(uint32_t inode_no, ext2_dir_entry_t *entries, int max_entries);
 
+// 目录大小计算
+uint32_t calculate_directory_size(uint32_t dir_inode);
+
 // 特殊目录项
 int create_dot_entries(uint32_t dir_inode, uint32_t parent_inode);
 

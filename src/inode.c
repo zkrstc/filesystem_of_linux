@@ -147,13 +147,9 @@ int set_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t block_no)
         return -1;
     }
 
-    printf("[DEBUG] set_inode_block: inode=%u, block_index=%u, block_no=%u\n", 
-           inode_no, block_index, block_no);
-
     if (block_index < 12)
     {
         inode.i_block[block_index] = block_no;
-        printf("[DEBUG] set_inode_block: setting i_block[%u] = %u\n", block_index, block_no);
     }
     else if (block_index < 12 + BLOCK_SIZE / 4)
     {
@@ -182,7 +178,6 @@ int set_inode_block(uint32_t inode_no, uint32_t block_index, uint32_t block_no)
     }
 
     int result = write_inode(inode_no, &inode);
-    printf("[DEBUG] set_inode_block: write_inode returned %d\n", result);
     return result;
 }
 
@@ -195,12 +190,8 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
         return -1;
     }
 
-    printf("[DEBUG] read_inode_data: inode=%u, size=%u, offset=%ld, requested_size=%zu\n", 
-           inode_no, inode.i_size, offset, size);
-
     if (offset >= inode.i_size)
     {
-        printf("[DEBUG] read_inode_data: offset >= file size, returning 0\n");
         return 0;
     }
 
@@ -216,14 +207,12 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
 
         if (get_inode_block(inode_no, block_index, &block_no) != 0 || block_no == 0)
         {
-            printf("[DEBUG] read_inode_data: failed to get block %u or block is 0\n", block_index);
             break;
         }
 
         uint8_t block_buffer[BLOCK_SIZE];
         if (read_block(block_no, block_buffer) != 0)
         {
-            printf("[DEBUG] read_inode_data: failed to read block %u\n", block_no);
             break;
         }
 
@@ -244,8 +233,6 @@ ssize_t read_inode_data(uint32_t inode_no, void *buffer, size_t size, off_t offs
         current_offset += bytes_in_block;
     }
 
-    printf("[DEBUG] read_inode_data: actually read %zu bytes\n", bytes_read);
-
     // 更新访问时间
     update_atime(inode_no);
 
@@ -260,8 +247,7 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
         return -1;
     }
 
-    printf("[DEBUG] write_inode_data: inode=%u, current_size=%u, offset=%ld, size=%zu\n", 
-           inode_no, inode.i_size, offset, size);
+
 
     size_t bytes_written = 0;
     size_t remaining = size;//remaining表示剩余要写入的字节数，一开始比如是2000字节的话
@@ -326,19 +312,15 @@ ssize_t write_inode_data(uint32_t inode_no, const void *buffer, size_t size, off
     {
         inode.i_size = current_offset;
         inode.i_blocks = (inode.i_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        printf("[DEBUG] write_inode_data: updating file size from %u to %u\n", 
-               (uint32_t)(current_offset - bytes_written), inode.i_size);
         
         // 将更新后的inode写回磁盘
         if (write_inode(inode_no, &inode) != 0) {
-            printf("[DEBUG] write_inode_data: failed to write updated inode\n");
+            // 写入失败
         }
     }
 
     update_mtime(inode_no);
     update_ctime(inode_no);
-
-    printf("[DEBUG] write_inode_data: wrote %zu bytes, new size=%u\n", bytes_written, inode.i_size);
 
     return bytes_written;
 }
@@ -382,9 +364,6 @@ int truncate_inode(uint32_t inode_no, off_t length)
 返回 1（有权限）或 0（无权限）。*/
 int check_permission(uint32_t inode_no, int access)
 {
-
-
-
     ext2_inode_t inode;
     if (read_inode(inode_no, &inode) != 0)
     {
@@ -405,20 +384,33 @@ int check_permission(uint32_t inode_no, int access)
     if (uid == inode.i_uid)
     {
         mode = (inode.i_mode >> 6) & 0x7;
-        access_mask = (access >> 6) & 0x7;
+        // 将权限常量转换为对应的权限位
+        access_mask = 0;
+        if (access & EXT2_S_IRUSR) access_mask |= 0x4;  // 读权限
+        if (access & EXT2_S_IWUSR) access_mask |= 0x2;  // 写权限
+        if (access & EXT2_S_IXUSR) access_mask |= 0x1;  // 执行权限
     }
     else if (gid == inode.i_gid)
     {
         mode = (inode.i_mode >> 3) & 0x7;
-        access_mask = (access >> 3) & 0x7;
+        // 将权限常量转换为对应的权限位
+        access_mask = 0;
+        if (access & EXT2_S_IRGRP) access_mask |= 0x4;  // 读权限
+        if (access & EXT2_S_IWGRP) access_mask |= 0x2;  // 写权限
+        if (access & EXT2_S_IXGRP) access_mask |= 0x1;  // 执行权限
     }
     else
     {
         mode = inode.i_mode & 0x7;
-        access_mask = access & 0x7;
+        // 将权限常量转换为对应的权限位
+        access_mask = 0;
+        if (access & EXT2_S_IRUSR) access_mask |= 0x4;  // 读权限
+        if (access & EXT2_S_IWUSR) access_mask |= 0x2;  // 写权限
+        if (access & EXT2_S_IXUSR) access_mask |= 0x1;  // 执行权限
     }
 
-    return (mode & access_mask) == access_mask;
+    int result = (mode & access_mask) == access_mask;
+    return result;
 }
 
 int change_permission(uint32_t inode_no, uint16_t mode)
@@ -519,11 +511,9 @@ int is_directory(uint32_t inode_no)
     ext2_inode_t inode;
     if (read_inode(inode_no, &inode) != 0)
     {
-        printf("[DEBUG] is_directory: failed to read inode %u\n", inode_no);
         return 0;
     }
     int result = (inode.i_mode & 0xF000) == EXT2_S_IFDIR;
-    printf("[DEBUG] is_directory: inode %u, mode=0x%x, is_dir=%d\n", inode_no, inode.i_mode, result);
     return result;
 }
 

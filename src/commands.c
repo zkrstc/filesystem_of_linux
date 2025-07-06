@@ -18,18 +18,39 @@ int cmd_create(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限创建文件
-    if (!check_user_path_access(path, EXT2_S_IWUSR)) {
-        printf("Error: Permission denied - cannot create file in this location\n");
-        return -1;
-    }
-    
+    // 权限检查：需要父目录的写权限
     uint32_t parent_inode;
     char child_name[MAX_FILENAME];
-    
     if (get_parent_inode(path, &parent_inode, child_name) != 0) {
         printf("Error: Invalid path\n");
+        return -1;
+    }
+    // 获取父目录路径，直接用 get_parent_inode 逻辑拼接
+    char parent_path[MAX_PATH];
+    if (strcmp(path, "/") == 0) {
+        strncpy(parent_path, "/", sizeof(parent_path) - 1);
+        parent_path[sizeof(parent_path) - 1] = '\0';
+    } else {
+        char path_copy[MAX_PATH];
+        strncpy(path_copy, path, sizeof(path_copy) - 1);
+        path_copy[sizeof(path_copy) - 1] = '\0';
+        char *last_slash = strrchr(path_copy, '/');
+        if (last_slash == NULL) {
+            // 相对路径，父目录为当前目录
+            get_cwd_path(parent_path, sizeof(parent_path));
+        } else {
+            *last_slash = '\0';
+            if (strlen(path_copy) == 0) {
+                strncpy(parent_path, "/", sizeof(parent_path) - 1);
+                parent_path[sizeof(parent_path) - 1] = '\0';
+            } else {
+                strncpy(parent_path, path_copy, sizeof(parent_path) - 1);
+                parent_path[sizeof(parent_path) - 1] = '\0';
+            }
+        }
+    }
+    if (!check_user_path_access(parent_path, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot create file in this location\n");
         return -1;
     }
     
@@ -71,8 +92,6 @@ int cmd_delete(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限删除文件
     if (!check_user_path_access(path, EXT2_S_IWUSR)) {
         printf("Error: Permission denied - cannot delete file in this location\n");
         return -1;
@@ -123,13 +142,10 @@ int cmd_open(const char *path, int flags) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限访问文件,flags=1表示只读，flags=2表示只写，flags=3表示读写
     int access = 0;
-    if (flags & O_RDONLY) access |= EXT2_S_IRUSR;
+    if (flags == O_RDONLY || (flags & O_RDONLY)) access |= EXT2_S_IRUSR;
     if (flags & O_WRONLY) access |= EXT2_S_IWUSR;
     if (flags & O_RDWR) access |= (EXT2_S_IRUSR | EXT2_S_IWUSR);
-    
     if (!check_user_path_access(path, access)) {
         printf("Error: Permission denied - cannot access this file\n");
         return -1;
@@ -201,8 +217,6 @@ int cmd_read(int fd, void *buffer, size_t size) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 查找文件描述符
     open_file_t *file = NULL;
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (fs.open_files[i].is_open && fs.open_files[i].fd == fd) {
@@ -210,13 +224,16 @@ int cmd_read(int fd, void *buffer, size_t size) {
             break;
         }
     }
-    
     if (file == NULL) {
         printf("Error: Invalid file descriptor\n");
         return -1;
     }
-    
-    if (!(file->flags & O_RDONLY) && !(file->flags & O_RDWR)) {
+    // 权限检查：读文件
+    if (!check_permission(file->inode_no, EXT2_S_IRUSR)) {
+        printf("Error: Permission denied - cannot read this file\n");
+        return -1;
+    }
+    if ((file->flags & O_WRONLY) && !(file->flags & O_RDWR)) {
         printf("Error: File not opened for reading\n");
         return -1;
     }
@@ -242,8 +259,6 @@ int cmd_write(int fd, const void *buffer, size_t size) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 查找文件描述符
     open_file_t *file = NULL;
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (fs.open_files[i].is_open && fs.open_files[i].fd == fd) {
@@ -251,13 +266,16 @@ int cmd_write(int fd, const void *buffer, size_t size) {
             break;
         }
     }
-    
     if (file == NULL) {
         printf("Error: Invalid file descriptor\n");
         return -1;
     }
-    
-    if (!(file->flags & O_WRONLY) && !(file->flags & O_RDWR)) {
+    // 权限检查：写文件
+    if (!check_permission(file->inode_no, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot write this file\n");
+        return -1;
+    }
+    if ((file->flags & O_RDONLY) && !(file->flags & O_RDWR)) {
         printf("Error: File not opened for writing\n");
         return -1;
     }
@@ -292,6 +310,11 @@ int cmd_lseek(int fd, off_t offset, int whence) {
         printf("Error: Invalid file descriptor\n");
         return -1;
     }
+    // 权限检查：读或写
+    // if (!check_permission(file->inode_no, EXT2_S_IRUSR | EXT2_S_IWUSR)) {
+    //     printf("Error: Permission denied - cannot lseek this file\n");
+    //     return -1;
+    // }
     uint32_t file_size = get_file_size(file->inode_no);
     off_t new_offset = 0;
     if (whence == SEEK_SET) {
@@ -319,13 +342,10 @@ int cmd_dir(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限列出目录
     if (!check_user_path_access(path, EXT2_S_IRUSR)) {
         printf("Error: Permission denied - cannot access this directory\n");
         return -1;
     }
-    
     return list_directory(path);
 }
 
@@ -334,13 +354,10 @@ int cmd_mkdir(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限创建目录
     if (!check_user_path_access(path, EXT2_S_IWUSR)) {
         printf("Error: Permission denied - cannot create directory in this location\n");
         return -1;
     }
-    
     int result = create_directory(path, 0755);
     if (result == 0) {
         printf("Directory created: %s\n", path);
@@ -355,7 +372,10 @@ int cmd_rmdir(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
+    if (!check_user_path_access(path, EXT2_S_IWUSR)) {
+        printf("Error: Permission denied - cannot remove this directory\n");
+        return -1;
+    }
     int result = delete_directory(path);
     if (result == 0) {
         printf("Directory removed: %s\n", path);
@@ -370,13 +390,10 @@ int cmd_cd(const char *path) {
         printf("Error: Not logged in\n");
         return -1;
     }
-    
-    // 检查用户是否有权限进入目录
     if (!check_user_path_access(path, EXT2_S_IXUSR)) {
         printf("Error: Permission denied - cannot access this directory\n");
         return -1;
     }
-    
     int result = change_directory(path);
     if (result == 0) {
         printf("Changed directory to: %s\n", path);
