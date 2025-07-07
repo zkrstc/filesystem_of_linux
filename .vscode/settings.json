@@ -4,6 +4,7 @@
         "types.h": "c",
         "ext2.h": "c",
         "disk.h": "c",
-        "user.h": "c"
+        "user.h": "c",
+        "time.h": "c"
     }
 }

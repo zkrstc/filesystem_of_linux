@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
 // 目录操作
 int create_directory(const char *path, uint16_t mode) {
@@ -165,8 +166,9 @@ int list_directory(const char *path) {
     ext2_dir_entry_t entries[64];
     int count = read_directory_entries(inode_no, entries, 64);
     printf("Directory listing for: %s\n", path);
-    printf("%-20s %-10s %-10s %-10s %-10s %-10s %-10s\n", "Name", "Inode", "Type", "Size", "Permissions", "Owner", "Address");
-    printf("--------------------------------------------------------------------------------\n");
+    printf("%-20s %-10s %-10s %-10s %-10s %-10s %-10s %-17s %-17s %-17s\n",
+           "Name", "Inode", "Type", "Size", "Permissions", "Owner", "Address", "Atime", "Mtime", "Ctime");
+    printf("------------------------------------------------------------------------------------------------------------------------------------------\n");
     for (int i = 0; i < count; i++) {
         if (entries[i].inode == 0) continue;
         ext2_inode_t inode;
@@ -174,14 +176,12 @@ int list_directory(const char *path) {
         char type_char = '?';
         if (is_directory(entries[i].inode)) type_char = 'd';
         else if (is_regular_file(entries[i].inode)) type_char = '-';
-        
         // 计算显示的大小
         uint32_t display_size = inode.i_size;
         if (is_directory(entries[i].inode)) {
             // 对于目录，计算其下所有文件的总大小
             display_size = calculate_directory_size(entries[i].inode);
         }
-        
         char permissions[11];
         snprintf(permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c%c",
                 type_char,
@@ -194,7 +194,6 @@ int list_directory(const char *path) {
                 (inode.i_mode & EXT2_S_IROTH) ? 'r' : '-',
                 (inode.i_mode & EXT2_S_IWOTH) ? 'w' : '-',
                 (inode.i_mode & EXT2_S_IXOTH) ? 'x' : '-');
-        
         // 获取所有者用户名
         char owner_name[32] = "unknown";
         for (int j = 0; j < MAX_USERS; j++) {
@@ -204,9 +203,15 @@ int list_directory(const char *path) {
                 break;
             }
         }
-        
-        printf("%-20s %-10u %-10c %-10u %-10s %-10s %-10u\n",
-               entries[i].name, entries[i].inode, type_char, display_size, permissions, owner_name, entries[i].inode);
+        // 格式化时间戳
+        char atime_str[20], mtime_str[20], ctime_str[20];
+        time_t atime = inode.i_atime, mtime = inode.i_mtime, ctime = inode.i_ctime;
+        strftime(atime_str, sizeof(atime_str), "%Y-%m-%d %H:%M", localtime(&atime));
+        strftime(mtime_str, sizeof(mtime_str), "%Y-%m-%d %H:%M", localtime(&mtime));
+        strftime(ctime_str, sizeof(ctime_str), "%Y-%m-%d %H:%M", localtime(&ctime));
+        printf("%-20s %-10u %-10c %-10u %-10s %-10s %-10u %-17s %-17s %-17s\n",
+               entries[i].name, entries[i].inode, type_char, display_size, permissions, owner_name, entries[i].inode,
+               atime_str, mtime_str, ctime_str);
     }
     return 0;
 }

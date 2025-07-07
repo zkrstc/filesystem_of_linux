@@ -349,6 +349,11 @@ int cmd_dir(const char *path) {
     return list_directory(path);
 }
 
+// ls 命令，行为同 dir
+int cmd_ls(const char *path) {
+    return cmd_dir(path);
+}
+
 int cmd_mkdir(const char *path) {
     if (!is_logged_in()) {
         printf("Error: Not logged in\n");
@@ -788,7 +793,7 @@ int parse_command(char *line) {
         }
         return cmd_rmdir(path);
     }
-    else if (strcmp(token, "dir") == 0) {
+    else if (strcmp(token, "dir") == 0 || strcmp(token, "ls") == 0) {
         char *path = strtok(NULL, " \t\n");
         if (path == NULL) {
             static char cwd_buf[MAX_PATH];
@@ -955,4 +960,4 @@ void command_loop(void) {
             break; // 退出
         }
     }
-} 
+}
